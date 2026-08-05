@@ -29,11 +29,11 @@ Cle TMDB gratuite : themoviedb.org -> Parametres -> API. Fournie de 3 facons (pa
 Usage — pointe --dir sur la RACINE de la serie (dossiers "Saison N"), --tmdb-id = l'id TMDB :
 
   # Simulation (n'ecrit rien) puis application :
-  python tag_mkv.py --dir "...\\Secret Level" --tmdb-id 261579
-  python tag_mkv.py --dir "...\\Secret Level" --tmdb-id 261579 --apply
+  python Metadata.py --dir "...\\Secret Level" --tmdb-id 261579
+  python Metadata.py --dir "...\\Secret Level" --tmdb-id 261579 --apply
 
   # Verification (lecture seule) : rapporte ce qui n'est pas encore conforme.
-  python tag_mkv.py --dir "...\\Secret Level" --tmdb-id 261579 --verify
+  python Metadata.py --dir "...\\Secret Level" --tmdb-id 261579 --verify
 
 Structure attendue : un sous-dossier "Saison N" par saison (les .mkv dedans), chaque .mkv
 prefixe par son numero d'episode ("01 - ...", "05 - ..."). Si --dir pointe directement sur
@@ -47,6 +47,7 @@ Options principales :
   --apply          applique reellement (defaut : simulation)
   --verify         verifie seulement (aucune ecriture)
   --skip-done      saute les fichiers deja conformes
+  --no-tag         ne modifie aucun episode ; genere seulement folder.jpg / recap (series non-MKV)
   --no-cover / --no-date / --no-audio-names / --no-sub-names / --no-flags / --no-stats
   --artwork        ecrit folder.jpg (vignette de dossier) en anglais (serie et chaque saison)
   --recap          genere une fiche recap HTML de la serie (onglets par saison)
@@ -456,6 +457,9 @@ def apply_to_file(path, season, ep, args, info):
 # 5. Verification des outils
 # ----------------------------------------------------------------------------
 def check_tools(args):
+    if args.no_tag:                     # annexes seulement -> aucun outil MKV requis
+        args.no_probe = True
+        return
     missing = [t for t in ("mkvpropedit", "mkvmerge") if shutil.which(t) is None]
     if missing:
         print("Outils manquants dans le PATH :", ", ".join(missing))
@@ -701,6 +705,8 @@ def main():
     ap.add_argument("--apply", action="store_true", help="Applique reellement (defaut : simulation)")
     ap.add_argument("--verify", action="store_true", help="Verifie seulement l'etat des fichiers (aucune ecriture)")
     ap.add_argument("--skip-done", action="store_true", help="Saute les fichiers deja conformes")
+    ap.add_argument("--no-tag", action="store_true",
+                    help="Ne modifie aucun episode ; genere seulement folder.jpg / recap (series non-MKV)")
     ap.add_argument("--no-cover", action="store_true", help="N'embarque pas la jaquette")
     ap.add_argument("--no-date", action="store_true", help="Ne modifie pas la date du segment")
     ap.add_argument("--no-audio-names", action="store_true", help="Ne renomme pas les pistes audio")
@@ -739,6 +745,10 @@ def main():
     print(f"=== {mode} ===")
     print(f"    serie : {args.series_name}   |   source : TMDB {args.language} (id {args.tmdb_id})\n")
 
+    if args.no_tag and not (args.artwork or args.recap):
+        print("Astuce : --no-tag sans --artwork ni --recap ne produit rien. "
+              "Ajoute --artwork et/ou --recap.\n")
+
     seasons = find_seasons(args.dir)
     if seasons:
         # --- Multi-saisons : --dir est la racine de la serie ---
@@ -751,12 +761,17 @@ def main():
             except (URLError, OSError) as e:
                 print(f"  echec TMDB saison {num} : {e} -> saison ignoree\n")
                 continue
-            m, tot, pairs = process_season(sub, data, args)
-            total_m += m
-            total_f += tot
+            if args.no_tag:
+                print("  episodes non modifies (--no-tag)")
+                pairs = []
+            else:
+                m, tot, pairs = process_season(sub, data, args)
+                total_m += m
+                total_f += tot
             processed.append((sub, num, data, pairs))
             print()
-        print(f"TOTAL : {total_m}/{total_f} fichier(s) associe(s) sur {len(seasons)} saison(s) detectee(s).")
+        if not args.no_tag:
+            print(f"TOTAL : {total_m}/{total_f} fichier(s) associe(s) sur {len(seasons)} saison(s) detectee(s).")
         generate_sidecars(args.dir, args.series_name, show, processed, args)
     else:
         # --- Saison unique : --dir contient directement les .mkv ---
@@ -765,7 +780,11 @@ def main():
             data = tmdb_season(args.tmdb_id, num, args.tmdb_key, args.language)
         except (URLError, OSError) as e:
             sys.exit(f"Echec de l'appel TMDB (saison {num}) : {e}")
-        _, _, pairs = process_season(args.dir, data, args)
+        if args.no_tag:
+            print("  episodes non modifies (--no-tag)")
+            pairs = []
+        else:
+            _, _, pairs = process_season(args.dir, data, args)
         generate_sidecars(args.dir, args.series_name, show, [(Path(args.dir), num, data, pairs)], args)
 
 
