@@ -680,7 +680,7 @@ def generate_sidecars(root_dir, series_name, show, processed, args):
 
     if args.recap:
         html = build_recap_html(series_name, show, [(n, s) for _, n, s, _ in processed])
-        out = Path(root_dir) / f"{re.sub(r'[<>:\"/\\\\|?*]', '', series_name)} - recap.html"
+        out = Path(root_dir) / "recap.html"
         print(f"  [serie] {_write_text(out, html, apply)}")
 
 
