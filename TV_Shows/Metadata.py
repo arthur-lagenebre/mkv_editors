@@ -622,7 +622,7 @@ def build_recap_html(series_name, show, seasons):
                 "<div class='ep'>"
                 + (f"<img src='{esc(img)}' alt='' loading='lazy'>" if img else "<img alt=''>")
                 + "<div class='meta'>"
-                + f"<div><span class='n'>E{ep.get('episode_number', 0):02d}</span> "
+                + f"<div><span class='n'>{ep.get('episode_number', 0):02d}</span> "
                 + f"<span class='t'>{esc(ep.get('name'))}</span></div>"
                 + f"<div class='d'>{esc(fr_date(ep.get('air_date')))}{rt}</div>"
                 + f"<div class='o'>{esc(ep.get('overview'))}</div>"
