@@ -11,7 +11,8 @@ Format applique :  "{numero} - {nom de l'episode}.ext"
 L'association fichier <-> episode se fait par le numero present dans le nom actuel
 (S01E05, 1x05, 05 - ..., Episode 5...), avec repli sur une correspondance de titre.
 
-Cle TMDB (par priorite) : --tmdb-key CLE > variable d'env TMDB_API_KEY > constante TMDB_KEY.
+Cle TMDB (par priorite) : fichier .env a la racine du depot (TMDB_KEY=...) > variable
+d'env TMDB_API_KEY > constante TMDB_KEY.
 
 Structure : un sous-dossier "Saison N" par saison, ou --dir pointant sur un dossier de saison.
 
@@ -31,9 +32,37 @@ from urllib.request import urlopen, Request
 from urllib.error import URLError
 
 # ============================================================================
-# Cle API TMDB (par priorite : --tmdb-key > env TMDB_API_KEY > ceci).
-TMDB_KEY = "8575554c39a61d0515c279d2693c1773"
+# Cle API TMDB (par priorite : .env > env TMDB_API_KEY > ceci).
+TMDB_KEY = ""
 # ============================================================================
+
+def load_dotenv(filename=".env"):
+    """Charge un fichier .env (lignes CLE=valeur) dans les variables d'environnement.
+
+    Le fichier est cherche en remontant depuis le dossier du script, puis depuis le
+    dossier courant ; on s'arrete au premier trouve. Les variables deja definies
+    dans l'environnement ne sont jamais ecrasees. Aucune dependance pip.
+    """
+    for start in (Path(__file__).resolve().parent, Path.cwd().resolve()):
+        for folder in (start, *start.parents):
+            path = folder / filename
+            if not path.is_file():
+                continue
+            for line in path.read_text(encoding="utf-8-sig").splitlines():
+                line = line.strip()
+                if line.startswith("export "):
+                    line = line[7:].lstrip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                name, _, value = line.partition("=")
+                name, value = name.strip(), value.strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                    value = value[1:-1]
+                if name:
+                    os.environ.setdefault(name, value)
+            return path
+    return None
+
 
 TMDB_API = "https://api.themoviedb.org/3"
 
@@ -183,16 +212,18 @@ def main():
     ap.add_argument("--dir", required=True,
                     help="Racine de la serie (dossiers 'Saison N') OU un dossier de saison")
     ap.add_argument("--tmdb-id", required=True, help="Identifiant TMDB de la serie [OBLIGATOIRE]")
-    ap.add_argument("--tmdb-key", help="Cle API TMDB (sinon env TMDB_API_KEY ou constante TMDB_KEY)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
     ap.add_argument("--apply", action="store_true", help="Renomme reellement (defaut : simulation)")
     ap.add_argument("--match-threshold", type=float, default=0.55,
                     help="Score minimal pour une association par titre (0-1)")
     args = ap.parse_args()
 
-    args.tmdb_key = args.tmdb_key or os.environ.get("TMDB_API_KEY") or TMDB_KEY or None
+    load_dotenv()  # rend disponibles les cles du fichier .env (non committe)
+    args.tmdb_key = (os.environ.get("TMDB_API_KEY")
+                     or os.environ.get("TMDB_KEY") or TMDB_KEY or None)
     if not args.tmdb_key:
-        sys.exit("Aucune cle TMDB. Renseigne --tmdb-key, la variable TMDB_API_KEY, "
+        sys.exit("Aucune cle TMDB. Renseigne la ligne TMDB_KEY=... du fichier .env "
+                 "(voir .env.example), la variable d'environnement TMDB_API_KEY, "
                  "ou la constante TMDB_KEY en haut du fichier.")
 
     mode = "APPLICATION" if args.apply else "SIMULATION (rien ne sera renomme ; ajoute --apply)"

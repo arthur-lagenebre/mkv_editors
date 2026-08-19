@@ -1,0 +1,7 @@
+# Secret : ne jamais committer la cle
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo

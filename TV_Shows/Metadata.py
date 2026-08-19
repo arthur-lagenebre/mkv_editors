@@ -24,7 +24,8 @@ Installation des outils (Windows) :
   winget install Gyan.FFmpeg
 
 Cle TMDB gratuite : themoviedb.org -> Parametres -> API. Fournie de 3 facons (par priorite) :
-  1) --tmdb-key CLE   2) variable d'env TMDB_API_KEY   3) constante TMDB_KEY en haut du fichier
+  1) fichier .env a la racine du depot (TMDB_KEY=...)   2) variable d'env TMDB_API_KEY
+  3) constante TMDB_KEY en haut du fichier
 
 Usage — pointe --dir sur la RACINE de la serie (dossiers "Saison N"), --tmdb-id = l'id TMDB :
 
@@ -41,7 +42,6 @@ un dossier de saison, seule celle-ci est traitee.
 
 Options principales :
   --tmdb-id STR    identifiant TMDB de la serie [OBLIGATOIRE]
-  --tmdb-key STR   cle/token TMDB (sinon env TMDB_API_KEY ou constante TMDB_KEY)
   --language STR   langue TMDB (defaut : fr-FR)
   --series-name STR  force le nom de serie (sinon auto depuis TMDB)
   --apply          applique reellement (defaut : simulation)
@@ -70,9 +70,37 @@ from urllib.error import URLError
 
 # ============================================================================
 # Cle API TMDB : colle-la ici entre les guillemets pour ne plus avoir a la
-# retaper (mode API). Priorite : --tmdb-key > variable d'env TMDB_API_KEY > ceci.
-TMDB_KEY = "8575554c39a61d0515c279d2693c1773"
+# retaper (mode API). Priorite : .env > env TMDB_API_KEY > ceci.
+TMDB_KEY = ""
 # ============================================================================
+
+def load_dotenv(filename=".env"):
+    """Charge un fichier .env (lignes CLE=valeur) dans les variables d'environnement.
+
+    Le fichier est cherche en remontant depuis le dossier du script, puis depuis le
+    dossier courant ; on s'arrete au premier trouve. Les variables deja definies
+    dans l'environnement ne sont jamais ecrasees. Aucune dependance pip.
+    """
+    for start in (Path(__file__).resolve().parent, Path.cwd().resolve()):
+        for folder in (start, *start.parents):
+            path = folder / filename
+            if not path.is_file():
+                continue
+            for line in path.read_text(encoding="utf-8-sig").splitlines():
+                line = line.strip()
+                if line.startswith("export "):
+                    line = line[7:].lstrip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                name, _, value = line.partition("=")
+                name, value = name.strip(), value.strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                    value = value[1:-1]
+                if name:
+                    os.environ.setdefault(name, value)
+            return path
+    return None
+
 
 TMDB_IMG_BASE = "https://image.tmdb.org/t/p/"
 
@@ -604,10 +632,56 @@ def _write_text(path, text, apply):
     return f"{Path(path).name} ecrit"
 
 
-def build_recap_html(series_name, show, seasons):
-    """Page HTML autonome : onglets de saisons cliquables, une carte par episode."""
+def hide_folder(folder):
+    """Applique l'attribut cache au dossier sous Windows."""
+    folder = Path(folder)
+    if os.name != "nt" or not folder.exists():
+        return True
+
+    try:
+        subprocess.run(
+            ["attrib", "+h", str(folder)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return True
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"      impossible de masquer {folder.name} : {e}")
+        return False
+
+
+def download_recap_image(image_path, destination):
+    """Telecharge une vignette TMDB localement, sans retélécharger un fichier valide."""
+    destination = Path(destination)
+    if destination.exists() and destination.stat().st_size > 0:
+        return True
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temp_destination = destination.with_suffix(destination.suffix + ".tmp")
+
+    try:
+        download_cover(image_path, STILL_SIZE, temp_destination)
+        temp_destination.replace(destination)
+        return True
+    except (URLError, OSError) as e:
+        print(f"      image recap ignoree : {destination.name} ({e})")
+        try:
+            temp_destination.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
+def build_recap_html(series_name, show, seasons, root_dir, apply, tmdb_id):
+    """Page HTML hors ligne : les vignettes sont stockees dans assets/."""
     def esc(s):
         return escape(str(s or ""))
+
+    assets_dir = Path(root_dir) / "assets"
+    if apply:
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        hide_folder(assets_dir)
 
     tabs, panels = [], []
     for i, (num, season) in enumerate(seasons):
@@ -616,7 +690,19 @@ def build_recap_html(series_name, show, seasons):
         cards = []
         for ep in season.get("episodes", []):
             still = ep.get("still_path")
-            img = f"{TMDB_IMG_BASE}{STILL_SIZE}{still}" if still else ""
+            img = ""
+            if still:
+                episode_number = ep.get("episode_number", 0)
+                filename = f"s{num:02d}e{episode_number:02d}.jpg"
+                destination = assets_dir / filename
+                relative_path = f"assets/{filename}"
+
+                if apply:
+                    if download_recap_image(still, destination):
+                        img = relative_path
+                else:
+                    img = relative_path
+
             rt = f" · {ep['runtime']} min" if ep.get("runtime") else ""
             cards.append(
                 "<div class='ep'>"
@@ -632,6 +718,7 @@ def build_recap_html(series_name, show, seasons):
 
     return (
         "<!DOCTYPE html><html lang='fr'><head><meta charset='utf-8'>"
+        f"<meta name='tmdb-id' content='{esc(tmdb_id)}'>"
         f"<title>{esc(series_name)}</title>"
         "<style>"
         "body{font:16px/1.5 system-ui,sans-serif;margin:0;background:#14151a;color:#e8e8ea}"
@@ -683,7 +770,14 @@ def generate_sidecars(root_dir, series_name, show, processed, args):
         print(f"  [serie] affiche (EN) : {write_poster(poster, root_dir, apply)}")
 
     if args.recap:
-        html = build_recap_html(series_name, show, [(n, s) for _, n, s, _ in processed])
+        html = build_recap_html(
+            series_name,
+            show,
+            [(n, s) for _, n, s, _ in processed],
+            root_dir,
+            apply,
+            args.tmdb_id,
+        )
         out = Path(root_dir) / "recap.html"
         print(f"  [serie] {_write_text(out, html, apply)}")
 
@@ -698,7 +792,6 @@ def main():
                     help="Racine de la serie (dossiers 'Saison N') OU un seul dossier de saison")
     # --- Source TMDB ---
     ap.add_argument("--tmdb-id", required=True, help="Identifiant TMDB de la serie [OBLIGATOIRE]")
-    ap.add_argument("--tmdb-key", help="Cle API TMDB (v3) ou token v4 ; sinon env TMDB_API_KEY ou constante")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
     ap.add_argument("--series-name", help="Force le nom de serie (sinon recupere automatiquement de TMDB)")
     # --- Ce qu'on ecrit ---
@@ -723,10 +816,12 @@ def main():
 
     check_tools(args)
 
-    # Cle : ligne de commande > variable d'environnement > constante en haut du fichier
-    args.tmdb_key = args.tmdb_key or os.environ.get("TMDB_API_KEY") or TMDB_KEY or None
+    load_dotenv()  # rend disponibles les cles du fichier .env (non committe)
+    args.tmdb_key = (os.environ.get("TMDB_API_KEY")
+                     or os.environ.get("TMDB_KEY") or TMDB_KEY or None)
     if not args.tmdb_key:
-        sys.exit("Aucune cle TMDB. Renseigne --tmdb-key, la variable TMDB_API_KEY, "
+        sys.exit("Aucune cle TMDB. Renseigne la ligne TMDB_KEY=... du fichier .env "
+                 "(voir .env.example), la variable d'environnement TMDB_API_KEY, "
                  "ou la constante TMDB_KEY en haut du fichier.")
 
     # Details de la serie via TMDB (nom auto, + poster/synopsis pour les annexes)

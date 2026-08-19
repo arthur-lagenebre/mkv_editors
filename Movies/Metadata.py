@@ -7,6 +7,7 @@ l'association se fait par RECHERCHE TMDB sur le titre + l'annee extraits du nom.
 
 Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux) :
   - le titre et la DATE de sortie dans les informations de segment
+    (sortie du pays de --language : fr-FR -> sortie francaise, pas la sortie d'origine)
   - le synopsis, le realisateur, les scenaristes, le casting, les genres (tags)
   - les tags de STATISTIQUES de piste (debit, duree, nb d'images)  [--no-stats]
   - l'affiche du film comme jaquette (attachment "cover.jpg")
@@ -17,8 +18,9 @@ Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux) :
 Dependances EXTERNES (dans le PATH) : mkvpropedit + mkvmerge (MKVToolNix), ffprobe (FFmpeg).
 Aucune dependance pip. Necessite Internet (API TMDB + jaquettes).
 
-Cle TMDB (par priorite) : --tmdb-key CLE  >  variable d'env TMDB_API_KEY  >  constante TMDB_KEY.
-(La meme cle que TV_Shows.py — via TMDB_API_KEY elle sert aux deux sans la dupliquer.)
+Cle TMDB (par priorite) : fichier .env a la racine du depot (TMDB_KEY=...)  >  variable
+d'env TMDB_API_KEY  >  constante TMDB_KEY.
+(Le meme .env sert a tous les scripts du depot : la cle n'est ecrite qu'une fois.)
 
 Structure attendue : soit un sous-dossier par film (les .mkv dedans), soit des .mkv a plat
 dans --dir. Le titre et l'annee sont lus dans le nom (dossier ou fichier), ex. "Inception (2010)".
@@ -52,9 +54,37 @@ from urllib.error import URLError
 
 # ============================================================================
 # Cle API TMDB : colle-la ici entre les guillemets pour ne plus avoir a la
-# retaper. Priorite : --tmdb-key > variable d'env TMDB_API_KEY > ceci.
-TMDB_KEY = "8575554c39a61d0515c279d2693c1773"
+# retaper. Priorite : .env > env TMDB_API_KEY > ceci.
+TMDB_KEY = ""
 # ============================================================================
+
+def load_dotenv(filename=".env"):
+    """Charge un fichier .env (lignes CLE=valeur) dans les variables d'environnement.
+
+    Le fichier est cherche en remontant depuis le dossier du script, puis depuis le
+    dossier courant ; on s'arrete au premier trouve. Les variables deja definies
+    dans l'environnement ne sont jamais ecrasees. Aucune dependance pip.
+    """
+    for start in (Path(__file__).resolve().parent, Path.cwd().resolve()):
+        for folder in (start, *start.parents):
+            path = folder / filename
+            if not path.is_file():
+                continue
+            for line in path.read_text(encoding="utf-8-sig").splitlines():
+                line = line.strip()
+                if line.startswith("export "):
+                    line = line[7:].lstrip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                name, _, value = line.partition("=")
+                name, value = name.strip(), value.strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                    value = value[1:-1]
+                if name:
+                    os.environ.setdefault(name, value)
+            return path
+    return None
+
 
 TMDB_IMG_BASE = "https://image.tmdb.org/t/p/"
 TMDB_API = "https://api.themoviedb.org/3"
@@ -145,6 +175,41 @@ def tmdb_movie(movie_id, key, language):
     return _tmdb_get(f"movie/{movie_id}?append_to_response=credits", key, language)
 
 
+# Ordre de preference des types de sortie TMDB :
+# theatrale > theatrale limitee > premiere > numerique > physique > TV.
+RELEASE_TYPE_ORDER = (3, 2, 1, 4, 5, 6)
+
+
+def release_region(language):
+    """'fr-FR' -> 'FR'. None si la langue ne precise aucun pays."""
+    part = language.split("-")[-1].upper()
+    return part if len(part) == 2 and part != language.upper() else None
+
+
+def tmdb_release_date(movie_id, key, language, region):
+    """Date de sortie du film dans `region` (ex. 'FR'), via /release_dates.
+
+    Le champ `release_date` des details renvoie TOUJOURS la sortie d'origine
+    (souvent americaine), meme interroge en fr-FR : il faut cet endpoint pour
+    obtenir la sortie nationale. On retient le type le plus pertinent (voir
+    RELEASE_TYPE_ORDER) et, a type egal, la date la plus ancienne — sinon une
+    ressortie en salles prendrait le pas sur la sortie initiale.
+    Retourne None si le pays est absent ou en cas d'echec reseau.
+    """
+    try:
+        results = _tmdb_get(f"movie/{movie_id}/release_dates", key, language).get("results", [])
+    except (URLError, OSError):
+        return None
+    dates = next((r.get("release_dates", []) for r in results
+                  if r.get("iso_3166_1") == region), [])
+    for wanted in RELEASE_TYPE_ORDER:
+        same = sorted(d["release_date"][:10] for d in dates
+                      if d.get("type") == wanted and d.get("release_date"))
+        if same:
+            return same[0]
+    return None
+
+
 # ----------------------------------------------------------------------------
 # 3. Construction des tags Matroska (TargetTypeValue 50 = film, 70 = collection)
 # ----------------------------------------------------------------------------
@@ -193,8 +258,6 @@ def build_movie_tags_xml(movie, max_actors=20):
         tag.append(simple("ACTOR", a))
     if genres:
         tag.append(simple("GENRE", genres))
-    if movie.get("vote_average"):
-        tag.append(simple("COMMENT", f"TMDB {round(movie['vote_average'], 1)}/10 ({movie.get('vote_count', 0)} votes)"))
     tag.append("  </Tag>")
     lines += tag
     lines.append("</Tags>")
@@ -442,7 +505,8 @@ def process_movie(folder, mkv, movie, args, foldered):
         return
 
     if not args.no_date and movie.get("release_date"):
-        print(f"      date -> {movie['release_date']}")
+        origine = f" (sortie {movie['_date_region']})" if movie.get("_date_region") else " (sortie d'origine)"
+        print(f"      date -> {movie['release_date']}{origine}")
     for line in track_preview_lines(info, args):
         print(line)
 
@@ -466,7 +530,6 @@ def main():
     ap = argparse.ArgumentParser(description="Etiquette des films .mkv depuis TMDB (en francais).")
     ap.add_argument("--dir", required=True,
                     help="Dossier de films (un sous-dossier par film, ou des .mkv a plat)")
-    ap.add_argument("--tmdb-key", help="Cle API TMDB (sinon env TMDB_API_KEY ou constante TMDB_KEY)")
     ap.add_argument("--tmdb-id", help="Force l'id TMDB (utile si --dir ne contient qu'un seul film)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
     ap.add_argument("--apply", action="store_true", help="Applique reellement (defaut : simulation)")
@@ -483,9 +546,12 @@ def main():
     args = ap.parse_args()
 
     check_tools(args)
-    args.tmdb_key = args.tmdb_key or os.environ.get("TMDB_API_KEY") or TMDB_KEY or None
+    load_dotenv()  # rend disponibles les cles du fichier .env (non committe)
+    args.tmdb_key = (os.environ.get("TMDB_API_KEY")
+                     or os.environ.get("TMDB_KEY") or TMDB_KEY or None)
     if not args.tmdb_key:
-        sys.exit("Aucune cle TMDB. Renseigne --tmdb-key, la variable TMDB_API_KEY, "
+        sys.exit("Aucune cle TMDB. Renseigne la ligne TMDB_KEY=... du fichier .env "
+                 "(voir .env.example), la variable d'environnement TMDB_API_KEY, "
                  "ou la constante TMDB_KEY en haut du fichier.")
 
     if args.verify:
@@ -530,6 +596,13 @@ def main():
             print(f"  echec details TMDB : {e}\n")
             continue
         movie["_order"] = order
+
+        # Sortie nationale (fr-FR -> FR) : sans ca, TMDB donne la sortie d'origine.
+        region = release_region(args.language)
+        local = (tmdb_release_date(movie_id, args.tmdb_key, args.language, region)
+                 if region and not args.no_date else None)
+        if local:
+            movie["release_date"], movie["_date_region"] = local, region
 
         matched += 1
         process_movie(folder, mkv, movie, args, foldered)
