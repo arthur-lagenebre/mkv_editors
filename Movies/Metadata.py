@@ -41,11 +41,10 @@ Options : --apply --verify --skip-done --artwork
 
 import argparse
 import sys
-from difflib import SequenceMatcher
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
-from mkvlib import artwork, cli, mkv, naming                      # noqa: E402
+from mkvlib import artwork, cli, lookup, mkv, naming               # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError, release_region   # noqa: E402
 
 # ============================================================================
@@ -77,33 +76,7 @@ def find_movies(root):
 
 
 # ----------------------------------------------------------------------------
-# 2. Choix du film sur TMDB
-# ----------------------------------------------------------------------------
-def _norm(s):
-    return " ".join((s or "").lower().split())
-
-
-def pick_result(results, query):
-    """(film, remarques). Le premier resultat TMDB, avec les doutes rendus visibles.
-
-    TMDB classe par popularite : quand deux films portent le meme titre (remake) ou
-    quand le titre trouve n'a plus grand-chose a voir avec la recherche, le premier
-    resultat n'est pas forcement le bon. Autant le dire que de l'ecrire en silence.
-    """
-    best = results[0]
-    notes = []
-    if len(results) > 1 and _norm(results[1].get("title")) == _norm(best.get("title")):
-        other = results[1]
-        notes.append(f"titre partage avec {other.get('title')} "
-                     f"({(other.get('release_date') or '?')[:4]}) [id {other.get('id')}] "
-                     "-> verifie l'annee, ou force --tmdb-id")
-    if SequenceMatcher(None, _norm(query), _norm(best.get("title"))).ratio() < 0.6:
-        notes.append("titre trouve eloigne de la recherche -> a verifier")
-    return best, notes
-
-
-# ----------------------------------------------------------------------------
-# 3. Etat vise pour un film (TargetTypeValue 50 = film, 70 = collection/saga)
+# 2. Etat vise pour un film (TargetTypeValue 50 = film, 70 = collection/saga)
 # ----------------------------------------------------------------------------
 def build_movie_tags_xml(movie, max_actors=20):
     credits = movie.get("credits", {})
@@ -141,7 +114,7 @@ def movie_target(movie, opts):
 
 
 # ----------------------------------------------------------------------------
-# 4. Traitement d'un film
+# 3. Traitement d'un film
 # ----------------------------------------------------------------------------
 def process_movie(folder, path, movie, args, opts, tmdb, foldered):
     info = mkv.identify(path)
@@ -195,11 +168,11 @@ def resolve_movie(rawname, args, tmdb, single):
             print(f"  [NON ASSOCIE] recherche '{title}'"
                   + (f" ({year})" if year else "") + " -> aucun resultat\n")
             return None
-        best, notes = pick_result(results, title)
+        best, notes = lookup.pick_result(results, title)
         movie_id = best["id"]
         print(f"  recherche : '{title}'" + (f" ({year})" if year else "")
               + (f" [ordre {order}]" if order else "")
-              + f" -> {best.get('title')} ({(best.get('release_date') or '?')[:4]}) [id {movie_id}]")
+              + f" -> {lookup.describe(best)}")
         for note in notes:
             print(f"  /!\\ {note}")
 
@@ -220,7 +193,7 @@ def resolve_movie(rawname, args, tmdb, single):
 
 
 # ----------------------------------------------------------------------------
-# 5. Programme principal
+# 4. Programme principal
 # ----------------------------------------------------------------------------
 def parse_args():
     ap = argparse.ArgumentParser(description="Etiquette des films .mkv depuis TMDB (en francais).")

@@ -17,8 +17,12 @@ d'env TMDB_API_KEY > constante TMDB_KEY.
 Structure : un sous-dossier "Saison N" par saison, ou --dir pointant sur un dossier de saison.
 
 Usage :
-  python Rename_Episodes.py --dir "D:\Series\Ma Serie" --tmdb-id 1234           # simulation
-  python Rename_Episodes.py --dir "D:\Series\Ma Serie" --tmdb-id 1234 --apply   # renomme
+  python Rename_Episodes.py --dir "D:\Series\Ma Serie"                  # simulation
+  python Rename_Episodes.py --dir "D:\Series\Ma Serie" --apply          # renomme
+  python Rename_Episodes.py --dir "D:\Series\Ma Serie" --tmdb-id 1234   # id force
+
+La serie est identifiee par une recherche TMDB sur le nom du dossier ; --tmdb-id
+n'est utile que si la recherche se trompe ou ne trouve rien.
 """
 
 import argparse
@@ -27,7 +31,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
-from mkvlib import cli, naming                                    # noqa: E402
+from mkvlib import cli, lookup, naming                            # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 
 # ============================================================================
@@ -184,7 +188,8 @@ def main():
         description="Renomme les episodes d'une serie au format '{numero} - {nom}.ext' (donnees TMDB).")
     ap.add_argument("--dir", required=True,
                     help="Racine de la serie (dossiers 'Saison N') OU un dossier de saison")
-    ap.add_argument("--tmdb-id", required=True, help="Identifiant TMDB de la serie [OBLIGATOIRE]")
+    ap.add_argument("--tmdb-id", help="Identifiant TMDB de la serie "
+                    "(par defaut : recherche sur le nom du dossier)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
     ap.add_argument("--apply", action="store_true", help="Renomme reellement (defaut : simulation)")
     ap.add_argument("--match-threshold", type=float, default=0.55,
@@ -195,7 +200,11 @@ def main():
     tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="rename_ep/1.0")
 
     mode = cli.mode_label(args, "rien ne sera renomme ; ajoute --apply")
-    print(f"=== {mode} ===   source : TMDB {args.language}\n")
+    print(f"=== {mode} ===   source : TMDB {args.language}")
+    args.tmdb_id = lookup.resolve_show_id(tmdb, args.dir, args.tmdb_id)
+    if args.tmdb_id is None:
+        sys.exit("Serie non identifiee : relance avec --tmdb-id.")
+    print()
 
     seasons = naming.find_seasons(args.dir)
     total_done = total = 0

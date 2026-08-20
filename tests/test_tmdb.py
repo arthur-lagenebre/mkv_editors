@@ -68,6 +68,22 @@ class TestRequetes(ClientTestCase):
         _, reqs = self.call([FakeResponse(b"{}")], args=("search/movie?query=Dune",))
         self.assertIn("query=Dune&api_key=", reqs[0].full_url)
 
+    def test_recherche_de_serie(self):
+        _, reqs = self.call([FakeResponse(b'{"results": []}')],
+                            methode="search_tv", args=("Fargo",))
+        self.assertIn("search/tv?query=Fargo", reqs[0].full_url)
+        self.assertNotIn("first_air_date_year", reqs[0].full_url)
+
+    def test_recherche_de_serie_avec_annee(self):
+        _, reqs = self.call([FakeResponse(b'{"results": []}')],
+                            methode="search_tv", args=("Fargo", "2014"))
+        self.assertIn("first_air_date_year=2014", reqs[0].full_url)
+
+    def test_titre_encode_dans_l_url(self):
+        _, reqs = self.call([FakeResponse(b'{"results": []}')],
+                            methode="search_tv", args=("Cowboy Bebop",))
+        self.assertIn("query=Cowboy%20Bebop", reqs[0].full_url)
+
     def test_langue_ponctuelle(self):
         _, reqs = self.call([FakeResponse(b"{}")], methode="series", args=(1, "en-US"))
         self.assertIn("language=en-US", reqs[0].full_url)

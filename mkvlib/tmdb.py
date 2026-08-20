@@ -137,6 +137,12 @@ class Tmdb:
         return None
 
     # ---------------------------------------------------------------- Series
+    def search_tv(self, name, year=None):
+        endpoint = f"search/tv?query={quote(name)}"
+        if year:
+            endpoint += f"&first_air_date_year={year}"
+        return self.get(endpoint).get("results", [])
+
     def series(self, show_id, language=None):
         """Details de la serie (nom, synopsis, poster, date de premiere diffusion...)."""
         return self.get(f"tv/{show_id}", language)

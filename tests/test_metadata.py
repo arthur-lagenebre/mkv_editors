@@ -117,24 +117,6 @@ class TestFilms(unittest.TestCase):
         self.assertFalse(foldered)
         self.assertEqual([m[2] for m in movies], ["Heat (1995)"])
 
-    def test_remake_signale(self):
-        resultats = [{"id": 1, "title": "Dune", "release_date": "2021-09-15"},
-                     {"id": 2, "title": "Dune", "release_date": "1984-12-14"}]
-        best, notes = films.pick_result(resultats, "Dune")
-        self.assertEqual(best["id"], 1)
-        self.assertEqual(len(notes), 1)
-        self.assertIn("id 2", notes[0])
-
-    def test_titre_eloigne_signale(self):
-        _, notes = films.pick_result([{"id": 9, "title": "Autre chose"}], "Inception")
-        self.assertTrue(any("eloigne" in n for n in notes))
-
-    def test_resultat_evident_sans_remarque(self):
-        resultats = [{"id": 1, "title": "Inception", "release_date": "2010-07-14"},
-                     {"id": 2, "title": "Inception: The Cobol Job", "release_date": "2010-12-07"}]
-        best, notes = films.pick_result(resultats, "Inception")
-        self.assertEqual((best["id"], notes), (1, []))
-
     def test_tags_de_saga(self):
         movie = {"title": "Iron Man", "release_date": "2008-04-30", "_order": 1,
                  "belongs_to_collection": {"name": "Iron Man - Saga"},
