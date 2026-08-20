@@ -51,10 +51,13 @@ Options principales :
   --no-cover / --no-date / --no-audio-names / --no-sub-names / --no-flags / --no-stats
   --artwork        ecrit folder.jpg (vignette de dossier) en anglais (serie et chaque saison)
   --recap          genere une fiche recap HTML de la serie (onglets par saison)
-  --image-size STR taille TMDB des images : w300 / w780 / original (defaut : w780)
+                   -> fichier UNIQUE : les vignettes sont encodees dedans, rien a cote
+  --image-size STR taille TMDB jaquette / folder.jpg : w300 / w780 / original (defaut : w780)
+  --still-size STR taille TMDB des vignettes du recap (defaut : w300)
 """
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -62,6 +65,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from difflib import SequenceMatcher
 from xml.sax.saxutils import escape
@@ -292,11 +296,24 @@ def mkv_identify(path):
         return None
 
 
-def download_cover(image_path, size, dest):
+def fetch_image(image_path, size):
+    """Telecharge une image TMDB et retourne ses octets.
+
+    Compare la taille recue a l'en-tete Content-Length : un flux coupe en cours de
+    route leve une erreur au lieu de produire silencieusement un JPEG tronque."""
     url = f"{TMDB_IMG_BASE}{size}{image_path}"
     req = Request(url, headers={"User-Agent": "tag_mkv/1.0"})
-    with urlopen(req, timeout=30) as r, open(dest, "wb") as f:
-        shutil.copyfileobj(r, f)
+    with urlopen(req, timeout=30) as r:
+        data = r.read()
+        announced = r.headers.get("Content-Length")
+    if announced and len(data) != int(announced):
+        raise OSError(f"telechargement incomplet ({len(data)}/{announced} octets)")
+    return data
+
+
+def download_cover(image_path, size, dest):
+    """Ecrit une image TMDB sur le disque (jaquette embarquee, folder.jpg)."""
+    Path(dest).write_bytes(fetch_image(image_path, size))
 
 
 # Nom "qualite" d'une piste audio : codec + disposition des canaux.
@@ -587,7 +604,6 @@ def process_season(mkv_dir, season, args):
 # 7. Generateurs annexes (option) : posters de dossier + fiche recap HTML
 # ----------------------------------------------------------------------------
 POSTER_SIZE = "w500"       # les posters sont en portrait
-STILL_SIZE = "w300"        # vignettes d'episode dans la fiche recap
 ARTWORK_LANG = "en-US"     # affiches recuperees en anglais
 
 FR_MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
@@ -632,56 +648,84 @@ def _write_text(path, text, apply):
     return f"{Path(path).name} ecrit"
 
 
-def hide_folder(folder):
-    """Applique l'attribut cache au dossier sous Windows."""
-    folder = Path(folder)
-    if os.name != "nt" or not folder.exists():
-        return True
+# Les vignettes du recap sont encodees en base64 DANS le HTML : la fiche est un
+# fichier unique, deplacable et partageable tel quel, sans dossier d'images a cote.
+STILL_MIME = "image/jpeg"
+# Cle de cache d'une vignette = taille TMDB + chemin TMDB (ex. "w300/aBc123.jpg").
+# Le chemin TMDB change des que l'image change, donc l'invalidation est automatique.
+STILL_KEY_RE = re.compile(r"^[\w./-]+$")
+# Retrouve les vignettes deja encodees dans un recap.html precedent.
+EMBEDDED_RE = re.compile(r"<img data-still='([^']+)' src='(data:[^']+)'")
 
+
+def still_key(still_path, size):
+    key = f"{size}{still_path}"
+    return key if STILL_KEY_RE.match(key) else None
+
+
+def read_embedded_stills(recap_path):
+    """Relit les vignettes encodees dans un recap.html existant.
+
+    C'est le cache : regenerer la fiche ne retelecharge que les vignettes nouvelles
+    ou modifiees, sans qu'aucun fichier annexe n'ait a etre conserve sur le disque."""
     try:
-        subprocess.run(
-            ["attrib", "+h", str(folder)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return True
-    except (OSError, subprocess.CalledProcessError) as e:
-        print(f"      impossible de masquer {folder.name} : {e}")
-        return False
+        html = Path(recap_path).read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    return dict(EMBEDDED_RE.findall(html))
 
 
-def download_recap_image(image_path, destination):
-    """Telecharge une vignette TMDB localement, sans retélécharger un fichier valide."""
-    destination = Path(destination)
-    if destination.exists() and destination.stat().st_size > 0:
-        return True
+def collect_stills(seasons, size):
+    """Retourne {cle: chemin TMDB} pour toutes les vignettes d'episode disponibles."""
+    needed = {}
+    for _, season in seasons:
+        for ep in season.get("episodes", []):
+            still = ep.get("still_path")
+            key = still_key(still, size) if still else None
+            if key:
+                needed[key] = still
+    return needed
 
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temp_destination = destination.with_suffix(destination.suffix + ".tmp")
 
-    try:
-        download_cover(image_path, STILL_SIZE, temp_destination)
-        temp_destination.replace(destination)
-        return True
-    except (URLError, OSError) as e:
-        print(f"      image recap ignoree : {destination.name} ({e})")
+def fetch_stills(needed, cached, size, workers=8):
+    """Resout {cle: chemin TMDB} en {cle: data-URI}.
+
+    Reprend ce que le recap existant contenait deja et telecharge le reste en
+    parallele (une serie longue = des centaines de vignettes : en sequentiel, chaque
+    image paie son propre aller-retour TLS)."""
+    stills = {k: cached[k] for k in needed if k in cached}
+    todo = sorted((k, p) for k, p in needed.items() if k not in stills)
+    if not todo:
+        if stills:
+            print(f"  [recap] {len(stills)} vignette(s) reprise(s) de la fiche existante")
+        return stills
+
+    print(f"  [recap] {len(todo)} vignette(s) a telecharger"
+          + (f", {len(stills)} reprise(s) de la fiche existante" if stills else ""))
+
+    def grab(item):
+        key, path = item
         try:
-            temp_destination.unlink(missing_ok=True)
-        except OSError:
-            pass
-        return False
+            raw = fetch_image(path, size)
+        except (URLError, OSError) as e:
+            print(f"      vignette ignoree ({path}) : {e}")
+            return key, None
+        return key, f"data:{STILL_MIME};base64," + base64.b64encode(raw).decode("ascii")
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for key, uri in pool.map(grab, todo):
+            if uri:
+                stills[key] = uri
+    return stills
 
 
-def build_recap_html(series_name, show, seasons, root_dir, apply, tmdb_id):
-    """Page HTML hors ligne : les vignettes sont stockees dans assets/."""
+def build_recap_html(series_name, show, seasons, tmdb_id, stills, size):
+    """Rend la page HTML (pur rendu : ni reseau ni disque).
+
+    'stills' = {cle: data-URI} ; un episode sans vignette disponible recoit un
+    emplacement vide plutot qu'une balise <img> sans source."""
     def esc(s):
         return escape(str(s or ""))
-
-    assets_dir = Path(root_dir) / "assets"
-    if apply:
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        hide_folder(assets_dir)
 
     tabs, panels = [], []
     for i, (num, season) in enumerate(seasons):
@@ -690,23 +734,15 @@ def build_recap_html(series_name, show, seasons, root_dir, apply, tmdb_id):
         cards = []
         for ep in season.get("episodes", []):
             still = ep.get("still_path")
-            img = ""
-            if still:
-                episode_number = ep.get("episode_number", 0)
-                filename = f"s{num:02d}e{episode_number:02d}.jpg"
-                destination = assets_dir / filename
-                relative_path = f"assets/{filename}"
-
-                if apply:
-                    if download_recap_image(still, destination):
-                        img = relative_path
-                else:
-                    img = relative_path
+            key = still_key(still, size) if still else None
+            uri = stills.get(key) if key else None
+            img = (f"<img data-still='{key}' src='{uri}' alt='' decoding='async' loading='lazy'>"
+                   if uri else "<div class='noimg'></div>")
 
             rt = f" · {ep['runtime']} min" if ep.get("runtime") else ""
             cards.append(
                 "<div class='ep'>"
-                + (f"<img src='{esc(img)}' alt='' loading='lazy'>" if img else "<img alt=''>")
+                + img
                 + "<div class='meta'>"
                 + f"<div><span class='n'>{ep.get('episode_number', 0):02d}</span> "
                 + f"<span class='t'>{esc(ep.get('name'))}</span></div>"
@@ -719,6 +755,7 @@ def build_recap_html(series_name, show, seasons, root_dir, apply, tmdb_id):
     return (
         "<!DOCTYPE html><html lang='fr'><head><meta charset='utf-8'>"
         f"<meta name='tmdb-id' content='{esc(tmdb_id)}'>"
+        f"<meta name='still-size' content='{esc(size)}'>"
         f"<title>{esc(series_name)}</title>"
         "<style>"
         "body{font:16px/1.5 system-ui,sans-serif;margin:0;background:#14151a;color:#e8e8ea}"
@@ -731,7 +768,8 @@ def build_recap_html(series_name, show, seasons, root_dir, apply, tmdb_id):
         ".tab:hover{background:#252833}"
         ".tab.active{background:#7cc4ff;border-color:#7cc4ff;color:#0d0e12;font-weight:600}"
         ".ep{display:flex;gap:16px;padding:14px 0;border-bottom:1px solid #21232b}"
-        ".ep img{width:160px;height:90px;object-fit:cover;border-radius:8px;background:#21232b;flex:none}"
+        ".ep img,.ep .noimg{width:160px;height:90px;object-fit:cover;border-radius:8px;"
+        "background:#21232b;flex:none}"
         ".ep .meta{flex:1}.ep .n{color:#7cc4ff;font-weight:600}"
         ".ep .t{font-weight:600}.ep .d{color:#9aa0aa;font-size:14px;margin:2px 0 6px}"
         ".ep .o{color:#c7ccd4;font-size:14px}"
@@ -770,16 +808,19 @@ def generate_sidecars(root_dir, series_name, show, processed, args):
         print(f"  [serie] affiche (EN) : {write_poster(poster, root_dir, apply)}")
 
     if args.recap:
-        html = build_recap_html(
-            series_name,
-            show,
-            [(n, s) for _, n, s, _ in processed],
-            root_dir,
-            apply,
-            args.tmdb_id,
-        )
         out = Path(root_dir) / "recap.html"
-        print(f"  [serie] {_write_text(out, html, apply)}")
+        seasons = [(n, s) for _, n, s, _ in processed]
+        needed = collect_stills(seasons, args.still_size)
+        # En simulation on ne telecharge rien : la page est rendue sans vignette.
+        stills = fetch_stills(needed, read_embedded_stills(out), args.still_size) if apply else {}
+        html = build_recap_html(series_name, show, seasons, args.tmdb_id, stills, args.still_size)
+        print(f"  [serie] {_write_text(out, html, apply)}"
+              + (f"  ({len(html) / 1_048_576:.1f} Mo, {len(stills)} vignette(s) integree(s))"
+                 if stills else ""))
+        legacy = Path(root_dir) / "assets"
+        if legacy.is_dir():
+            print(f"  [serie] note : le dossier '{legacy.name}' n'est plus utilise "
+                  "(vignettes desormais integrees au HTML) -> tu peux le supprimer")
 
 
 # ----------------------------------------------------------------------------
@@ -809,7 +850,11 @@ def main():
     # --- Generateurs annexes (option, ecrivent des fichiers a cote des .mkv) ---
     ap.add_argument("--artwork", action="store_true", help="Ecrit folder.jpg (vignette de dossier) en anglais")
     ap.add_argument("--recap", action="store_true", help="Genere une fiche recap HTML de la serie")
-    ap.add_argument("--image-size", default="w780", help="Taille TMDB : w300 / w780 / original")
+    ap.add_argument("--image-size", default="w780",
+                    help="Taille TMDB de la jaquette embarquee / folder.jpg : w300 / w780 / original")
+    ap.add_argument("--still-size", default="w300",
+                    help="Taille TMDB des vignettes du recap (defaut : w300 ; w400 = plus net "
+                         "sur ecran HiDPI mais fiche plus lourde)")
     ap.add_argument("--match-threshold", type=float, default=0.55,
                     help="Score minimal pour une association par titre (0-1)")
     args = ap.parse_args()
