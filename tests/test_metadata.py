@@ -138,5 +138,58 @@ class TestFilms(unittest.TestCase):
         self.assertEqual([n.text for n in root.findall("./Tag/Targets/TargetTypeValue")], ["50"])
 
 
+
+class TestRecap(unittest.TestCase):
+    SAISON = {"season_number": 1, "name": "Saison 1", "episodes": [
+        {"episode_number": 1, "name": "Un", "air_date": "2024-01-02"},
+        {"episode_number": 2, "name": "Deux"},
+        {"episode_number": 3, "name": "Trois"},
+    ]}
+
+    def rendre(self, owned):
+        run = series.SeasonRun(Path("."), 1, self.SAISON, owned)
+        return series.build_recap_html("Ma Serie", {"overview": "Resume"},
+                                       [run], "1234", {}, "w300")
+
+    def test_episodes_absents_marques(self):
+        html = self.rendre({1})
+        self.assertEqual(html.count("class='miss'"), 2)
+        self.assertEqual(html.count("class='ep absent'"), 2)
+        self.assertIn("<span class='cnt'>1/3</span>", html)
+
+    def test_saison_complete_sans_marquage(self):
+        html = self.rendre({1, 2, 3})
+        self.assertNotIn("class='miss'", html)
+        self.assertIn("<span class='cnt'>3/3</span>", html)
+
+    def test_sans_inventaire_rien_n_est_juge(self):
+        # Aucun fichier repere : tout declarer manquant serait un mensonge.
+        html = self.rendre(set())
+        self.assertNotIn("class='miss'", html)
+        self.assertNotIn("class='cnt'", html)
+
+    def test_page_complete(self):
+        html = self.rendre({1})
+        self.assertIn("<title>Ma Serie</title>", html)
+        self.assertIn("<meta name='tmdb-id' content='1234'>", html)
+        self.assertEqual(html.count("<div class='ep"), 3)
+        self.assertIn("2 janvier 2024", html)
+
+    def test_titres_echappes(self):
+        saison = dict(self.SAISON, episodes=[{"episode_number": 1, "name": "Tom & <b>Jerry</b>"}])
+        run = series.SeasonRun(Path("."), 1, saison, {1})
+        html = series.build_recap_html("S", {}, [run], "1", {}, "w300")
+        self.assertIn("Tom &amp; &lt;b&gt;Jerry&lt;/b&gt;", html)
+        self.assertNotIn("<b>Jerry</b>", html)
+
+    def test_vignettes_integrees_et_manquantes(self):
+        saison = dict(self.SAISON, episodes=[
+            {"episode_number": 1, "name": "Un", "still_path": "/a.jpg"},
+            {"episode_number": 2, "name": "Deux"}])
+        run = series.SeasonRun(Path("."), 1, saison, {1, 2})
+        html = series.build_recap_html("S", {}, [run], "1",
+                                       {"w300/a.jpg": "data:image/jpeg;base64,AAA"}, "w300")
+        self.assertIn("<img data-still='w300/a.jpg' src='data:image/jpeg;base64,AAA'", html)
+        self.assertIn("<div class='noimg'></div>", html)
 if __name__ == "__main__":
     unittest.main()

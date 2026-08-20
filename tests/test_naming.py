@@ -95,5 +95,53 @@ class TestNomsEcrits(unittest.TestCase):
         self.assertEqual(naming.fr_date("pas une date"), "pas une date")
 
 
+
+class TestAssociation(unittest.TestCase):
+    EPISODES = [{"episode_number": 1, "name": "Le debut"},
+                {"episode_number": 2, "name": "Warhammer 40,000 : et ils marcheront"}]
+
+    def test_numero_prioritaire_sur_le_titre(self):
+        ep, methode = naming.match_episode("S01E02 - Le debut.mkv", self.EPISODES, 0.55)
+        self.assertEqual(ep["episode_number"], 2)
+        self.assertIn("depuis le nom", methode)
+
+    def test_repli_sur_le_titre(self):
+        ep, methode = naming.match_episode("Warhammer 40,000.mkv", self.EPISODES, 0.55)
+        self.assertEqual(ep["episode_number"], 2)
+        self.assertIn("titre", methode)
+
+    def test_sous_le_seuil_rien_n_est_associe(self):
+        ep, _ = naming.match_episode("bande annonce.mkv", self.EPISODES, 0.95)
+        self.assertIsNone(ep)
+
+    def test_numero_absent_du_jeu_de_donnees(self):
+        ep, _ = naming.match_episode("S01E99.mkv", self.EPISODES, 0.95)
+        self.assertIsNone(ep)
+
+
+class TestInventaire(unittest.TestCase):
+    EPISODES = [{"episode_number": n, "name": f"Episode {n}"} for n in range(1, 6)]
+
+    def inventaire(self, *noms, seuil=0.55):
+        with tempfile.TemporaryDirectory() as d:
+            for nom in noms:
+                (Path(d) / nom).write_text(nom, encoding="utf-8")
+            return naming.owned_numbers(Path(d), self.EPISODES, seuil)
+
+    def test_numeros_reperes(self):
+        self.assertEqual(self.inventaire("01 - Episode 1.mkv", "S01E03.mp4"), {1, 3})
+
+    def test_tous_formats_video(self):
+        # L'inventaire sert aussi aux series qui ne sont pas en .mkv (--no-tag).
+        self.assertEqual(self.inventaire("02 - x.avi", "04 - y.mp4"), {2, 4})
+
+    def test_non_video_ignores(self):
+        self.assertEqual(self.inventaire("01 - Episode 1.srt", "notes.txt"), set())
+
+    def test_dossier_absent(self):
+        self.assertEqual(naming.owned_numbers(Path("nexiste_pas_du_tout"), self.EPISODES), set())
+
+    def test_dossier_vide(self):
+        self.assertEqual(self.inventaire(), set())
 if __name__ == "__main__":
     unittest.main()

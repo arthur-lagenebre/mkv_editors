@@ -76,7 +76,9 @@ même nom, titre éloigné de la recherche — sont signalés. `--tmdb-id 1234` 
 quand la recherche se trompe ou ne trouve rien.
 
 `--recap` produit un `recap.html` unique (onglets par saison, vignettes encodées dans la page :
-rien à conserver à côté). `--artwork` écrit les `folder.jpg` (affiche anglaise) de la série et de
+rien à conserver à côté). Les épisodes absents du disque y sont grisés et étiquetés, avec un
+compteur par saison — l'inventaire se lit dans les noms de fichiers, tous formats vidéo
+confondus, donc il reste juste même avec `--no-tag`. `--artwork` écrit les `folder.jpg` (affiche anglaise) de la série et de
 chaque saison. `--no-tag` génère ces annexes sans toucher aux épisodes, pour une série qui n'est
 pas en `.mkv`.
 
