@@ -6,6 +6,8 @@ Format applique :  "{numero} - {nom de l'episode}.ext"
   - Le numero est zero-padde pour avoir le MEME nombre de digits dans toute la saison
     (largeur = nb de digits du plus grand numero, minimum 2).  ex : 01, 02, ... 15
   - N'importe quel format video (mkv, mp4, avi, m4v, mov, ts...) : ne touche qu'au NOM.
+  - Les SOUS-TITRES poses a cote suivent leur video (.srt, .ass, .idx/.sub...), en
+    conservant ce qui suit le nom : "S01E02.fr.forced.srt" -> "02 - Titre.fr.forced.srt".
   - N'a besoin d'AUCUN outil externe (ni MKVToolNix ni FFmpeg). Juste Internet pour TMDB.
 
 L'association fichier <-> episode se fait par le numero present dans le nom actuel
@@ -28,6 +30,7 @@ n'est utile que si la recherche se trompe ou ne trouve rien.
 import argparse
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
@@ -38,10 +41,6 @@ from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 # Cle API TMDB (par priorite : .env > env TMDB_API_KEY > ceci).
 TMDB_KEY = ""
 # ============================================================================
-
-VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".wmv", ".ts", ".m2ts",
-              ".flv", ".webm", ".mpg", ".mpeg", ".mts", ".vob", ".ogm"}
-
 
 # ----------------------------------------------------------------------------
 # Renommage sur le disque
@@ -78,106 +77,145 @@ def rename_path(src, dst):
 
 
 def apply_renames(planned):
-    """Applique les renommages prevus. Retourne le nombre de fichiers renommes.
+    """Applique les renommages prevus. Retourne l'ensemble des sources traitees.
 
     Un fichier peut viser le nom qu'un autre porte encore (numerotation decalee
     d'un cran) : on repasse alors sur les cas bloques une fois les autres liberes,
-    et on casse les cycles restants (01 <-> 02) par un nom temporaire.
+    et on casse les cycles restants (01 <-> 02) par un nom temporaire. Chaque
+    entree garde son chemin d'origine, seul repere stable a travers ces detours.
     """
-    done, pending = 0, list(planned)
+    done = set()
+    pending = [(src, src, dst) for src, dst in planned]   # (origine, source actuelle, cible)
     while pending:
         blocked, progress = [], False
-        for src, dst in pending:
+        for origin, src, dst in pending:
             if dst.exists() and not _same_file(src, dst):
-                blocked.append((src, dst))
+                blocked.append((origin, src, dst))
                 continue
             try:
                 rename_path(src, dst)
             except OSError as e:
                 print(f"  [ECHEC] {src.name} -> {dst.name} : {e}")
                 continue
-            done += 1
+            done.add(origin)
             progress = True
         if not blocked:
             break
         if progress:                      # des noms se sont liberes : on retente
             pending = blocked
             continue
-        cycle = {os.path.normcase(str(s)) for s, _ in blocked}
-        stuck = next((pair for pair in blocked
-                      if os.path.normcase(str(pair[1])) in cycle), None)
-        if stuck is None:                 # vrais conflits : des fichiers etrangers
-            for _, dst in blocked:
+        occupees = {os.path.normcase(str(s)) for _, s, _ in blocked}
+        bloque = next((t for t in blocked if os.path.normcase(str(t[2])) in occupees), None)
+        if bloque is None:                # vrais conflits : des fichiers etrangers
+            for _, _, dst in blocked:
                 print(f"  [IGNORE] existe deja : {dst.name}")
             break
-        src, dst = stuck                  # cycle : on degage le premier maillon
+        _, src, dst = bloque              # cycle : on degage le premier maillon
         try:
             tmp = _free_name(src)
             src.rename(tmp)
         except OSError as e:
             print(f"  [ECHEC] {src.name} -> {dst.name} : {e}")
             break
-        pending = [(tmp if s == src else s, d) for s, d in blocked]
+        pending = [(o, tmp if s == src else s, d) for o, s, d in blocked]
     return done
 
 
 # ----------------------------------------------------------------------------
 # Plan d'une saison
 # ----------------------------------------------------------------------------
-def plan_season(folder, season, threshold):
-    """Prevoit les renommages d'un dossier. Retourne (planned, deja_bons, total).
+@dataclass
+class Tally:
+    """Compte-rendu d'une saison. Additionnable pour totaliser la serie."""
+    named: int = 0          # videos deja au bon nom ou renommees
+    total: int = 0          # videos vues
+    subtitles: int = 0      # sous-titres renommes avec leur video
 
-    `planned` = [(source, destination), ...]. Deux fichiers qui visent le meme
-    nom (deux versions du meme episode, par exemple) sont signales ici : au
-    moment d'ecrire, le second echouerait sans explication.
+    def __add__(self, other):
+        return Tally(self.named + other.named, self.total + other.total,
+                     self.subtitles + other.subtitles)
+
+
+def sidecar_renames(video, new_stem):
+    """[(source, destination), ...] pour les sous-titres poses a cote d'une video.
+
+    Un sous-titre suit sa video s'il porte le meme nom : ce qui vient apres est
+    conserve tel quel, pour ne pas perdre la langue ni les drapeaux
+    ('S01E02.fr.forced.srt' -> '01 - Titre.fr.forced.srt').
+    """
+    renames = []
+    prefixe = video.stem.lower() + "."
+    for f in naming.files_with_ext(video.parent, naming.SUBTITLE_EXTS):
+        if not f.name.lower().startswith(prefixe):
+            continue
+        suite = f.name[len(video.stem):]
+        suite = suite[:-len(f.suffix)] + f.suffix.lower()
+        renames.append((f, f.with_name(new_stem + suite)))
+    return renames
+
+
+def plan_season(folder, season, threshold):
+    """Prevoit les renommages d'un dossier. Retourne (planned, tally).
+
+    `planned` = [(source, destination), ...], videos et sous-titres melanges.
+    Deux fichiers qui visent le meme nom (deux versions du meme episode, par
+    exemple) sont signales ici : au moment d'ecrire, le second echouerait sans
+    explication.
     """
     episodes = season.get("episodes", [])
     by_num = {e.get("episode_number"): e for e in episodes}
     if not by_num:
         print("  aucune donnee d'episode TMDB pour cette saison")
-        return [], 0, 0
+        return [], Tally()
 
     width = max(2, len(str(max(by_num))))   # meme nb de digits pour toute la saison
-    files = sorted(f for f in Path(folder).iterdir()
-                   if f.is_file() and f.suffix.lower() in VIDEO_EXTS)
+    files = naming.files_with_ext(folder, naming.VIDEO_EXTS)
     if not files:
         print("  aucun fichier video")
-        return [], 0, 0
+        return [], Tally()
 
-    planned, claimed, already = [], {}, 0
+    planned, claimed, tally = [], {}, Tally(total=len(files))
     for f in files:
-        ep = by_num.get(naming.detect_episode_number(f.name))
-        if ep is None:
-            ep, score = naming.best_title_match(f.name, episodes)
-            if score < threshold:
-                ep = None
+        ep, _ = naming.match_episode(f.name, episodes, threshold, by_num)
         if ep is None:
             print(f"  [NON ASSOCIE] {f.name}")
             continue
 
         n = ep.get("episode_number", 0)
-        newname = f"{n:0{width}d} - {naming.safe_name(ep.get('name', ''))}{f.suffix.lower()}"
-        dst = f.with_name(newname)
-        key = os.path.normcase(newname)
+        stem = f"{n:0{width}d} - {naming.safe_name(ep.get('name', ''))}"
+        dst = f.with_name(stem + f.suffix.lower())
+        key = os.path.normcase(dst.name)
         if key in claimed:
             print(f"  [DOUBLON] {f.name} vise le meme nom que {claimed[key].name} -> ignore")
             continue
         claimed[key] = f
+
+        # Les sous-titres suivent meme quand la video, elle, est deja bien nommee.
+        subs = [(src, cible) for src, cible in sidecar_renames(f, stem) if cible != src]
         if dst.name == f.name:
-            already += 1
-            continue
-        planned.append((f, dst))
-        print(f"  {n:0{width}d} : {f.name}")
-        print(f"       -> {newname}")
-    return planned, already, len(files)
+            tally.named += 1
+            if subs:
+                print(f"  {n:0{width}d} : {f.name}")
+        else:
+            planned.append((f, dst))
+            print(f"  {n:0{width}d} : {f.name}")
+            print(f"       -> {dst.name}")
+        for src, cible in subs:
+            planned.append((src, cible))
+            tally.subtitles += 1
+            print(f"       + {src.name}  ->  {cible.name}")
+    return planned, tally
 
 
 def rename_season(folder, season, args):
-    """Affiche le plan et l'applique si --apply. Retourne (au_bon_nom, total)."""
-    planned, already, total = plan_season(folder, season, args.match_threshold)
+    """Affiche le plan et l'applique si --apply. Retourne le Tally de la saison."""
+    planned, tally = plan_season(folder, season, args.match_threshold)
     if args.apply:
-        already += apply_renames(planned)
-    return already, total
+        renamed = apply_renames(planned)
+        videos = {src for src, _ in planned if src.suffix.lower() in naming.VIDEO_EXTS}
+        tally.named += len(videos & renamed)
+        tally.subtitles = len(renamed - videos)   # ce qui a vraiment bouge
+    return tally
 
 
 # ----------------------------------------------------------------------------
@@ -207,7 +245,7 @@ def main():
     print()
 
     seasons = naming.find_seasons(args.dir)
-    total_done = total = 0
+    bilan = Tally()
     if seasons:
         for sub, num in seasons:
             print(f"--- {sub.name}  (TMDB saison {num}) ---")
@@ -216,9 +254,7 @@ def main():
             except TmdbError as e:
                 print(f"  echec TMDB saison {num} : {e} -> saison ignoree\n")
                 continue
-            d, t = rename_season(sub, data, args)
-            total_done += d
-            total += t
+            bilan += rename_season(sub, data, args)
             print()
     else:
         num = naming.season_number(Path(args.dir).name) or 1
@@ -227,11 +263,11 @@ def main():
             data = tmdb.season(args.tmdb_id, num)
         except TmdbError as e:
             sys.exit(f"Echec de l'appel TMDB (saison {num}) : {e}")
-        d, t = rename_season(Path(args.dir), data, args)
-        total_done += d
-        total += t
+        bilan += rename_season(Path(args.dir), data, args)
 
-    print(f"TOTAL : {total_done}/{total} fichier(s) au bon nom.")
+    sous_titres = (f", {bilan.subtitles} sous-titre(s) "
+                   + ("renomme(s)" if args.apply else "a renommer")) if bilan.subtitles else ""
+    print(f"TOTAL : {bilan.named}/{bilan.total} fichier(s) au bon nom{sous_titres}.")
 
 
 if __name__ == "__main__":

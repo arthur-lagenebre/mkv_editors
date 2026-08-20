@@ -131,14 +131,7 @@ def build_plan(mkv_dir, season, args, opts):
     plan = []
     for f in sorted(Path(mkv_dir).glob("*.mkv")):
         f = f.resolve()
-        num = naming.detect_episode_number(f.name)
-        if num in by_num:
-            ep, method = by_num[num], f"n.{num:02d} (depuis le nom)"
-        else:
-            ep, score = naming.best_title_match(f.name, episodes)
-            method = f"titre (~{score:.0%})"
-            if score < args.match_threshold:
-                ep = None
+        ep, method = naming.match_episode(f.name, episodes, args.match_threshold, by_num)
 
         warn, info = "", None
         if ep:

@@ -8,7 +8,7 @@ remux, c'est quasi instantané), pour que chaque fichier reste autonome.
 |---|---|
 | [Movies/Metadata.py](Movies/Metadata.py) | Étiquette des films : titre, date de sortie **française**, synopsis, casting, genres, jaquette, noms de pistes |
 | [TV_Shows/Metadata.py](TV_Shows/Metadata.py) | Idem pour une série, saison par saison, plus une fiche récap HTML |
-| [TV_Shows/Rename_Episodes.py](TV_Shows/Rename_Episodes.py) | Renomme les épisodes en `{numéro} - {titre TMDB}.ext` |
+| [TV_Shows/Rename_Episodes.py](TV_Shows/Rename_Episodes.py) | Renomme les épisodes en `{numéro} - {titre TMDB}.ext`, sous-titres compris |
 
 Le code commun aux trois vit dans [mkvlib/](mkvlib/) (accès TMDB, lecture/écriture des `.mkv`,
 analyse des noms de fichiers). Aucune dépendance pip : uniquement la bibliothèque standard.
@@ -66,6 +66,9 @@ Un sous-dossier `Saison N` par saison, les `.mkv` dedans, préfixés par leur nu
 python TV_Shows\Rename_Episodes.py --dir "D:\Series\Ma Serie" --apply
 python TV_Shows\Metadata.py --dir "D:\Series\Ma Serie" --apply --recap
 ```
+
+Les sous-titres posés à côté d'une vidéo (`.srt`, `.ass`, `.idx`/`.sub`…) sont renommés avec
+elle, en conservant ce qui suit le nom : `S01E02.fr.forced.srt` → `02 - Titre.fr.forced.srt`.
 
 La série est identifiée par une recherche TMDB sur le nom du dossier (celui du parent si `--dir`
 pointe sur une saison) : le résultat retenu est affiché, et les cas douteux — reboot portant le
