@@ -28,21 +28,25 @@ Cle TMDB gratuite : themoviedb.org -> Parametres -> API. Fournie de 3 facons (pa
   1) fichier .env a la racine du depot (TMDB_KEY=...)   2) variable d'env TMDB_API_KEY
   3) constante TMDB_KEY en haut du fichier
 
-Usage — pointe --dir sur la RACINE de la serie (dossiers "Saison N"), --tmdb-id = l'id TMDB :
+Usage — pointe --dir sur la RACINE de la serie (dossiers "Saison N") :
 
   # Simulation (n'ecrit rien) puis application :
-  python Metadata.py --dir "...\Secret Level" --tmdb-id 261579
-  python Metadata.py --dir "...\Secret Level" --tmdb-id 261579 --apply
+  python Metadata.py --dir "...\Secret Level"
+  python Metadata.py --dir "...\Secret Level" --apply
 
   # Verification (lecture seule) : rapporte ce qui n'est pas encore conforme.
-  python Metadata.py --dir "...\Secret Level" --tmdb-id 261579 --verify
+  python Metadata.py --dir "...\Secret Level" --verify
+
+  # La serie est identifiee par recherche sur le nom du dossier ; --tmdb-id ne
+  # sert qu'a corriger une recherche qui se trompe ou ne trouve rien :
+  python Metadata.py --dir "...\Secret Level" --tmdb-id 261579 --apply
 
 Structure attendue : un sous-dossier "Saison N" par saison (les .mkv dedans), chaque .mkv
 prefixe par son numero d'episode ("01 - ...", "05 - ..."). Si --dir pointe directement sur
 un dossier de saison, seule celle-ci est traitee.
 
 Options principales :
-  --tmdb-id STR    identifiant TMDB de la serie [OBLIGATOIRE]
+  --tmdb-id STR    identifiant TMDB (defaut : recherche sur le nom du dossier)
   --language STR   langue TMDB (defaut : fr-FR)
   --series-name STR  force le nom de serie (sinon auto depuis TMDB)
   --apply          applique reellement (defaut : simulation)
@@ -66,7 +70,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
-from mkvlib import artwork, cli, mkv, naming                      # noqa: E402
+from mkvlib import artwork, cli, lookup, mkv, naming              # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 
 # ============================================================================
@@ -392,7 +396,8 @@ def parse_args():
     ap.add_argument("--dir", required=True,
                     help="Racine de la serie (dossiers 'Saison N') OU un seul dossier de saison")
     # --- Source TMDB ---
-    ap.add_argument("--tmdb-id", required=True, help="Identifiant TMDB de la serie [OBLIGATOIRE]")
+    ap.add_argument("--tmdb-id", help="Identifiant TMDB de la serie "
+                    "(par defaut : recherche sur le nom du dossier)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
     ap.add_argument("--series-name", help="Force le nom de serie (sinon recupere automatiquement de TMDB)")
     # --- Ce qu'on ecrit ---
@@ -427,6 +432,12 @@ def main():
     opts = mkv.Options.from_args(args)
     tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="tag_mkv/1.0")
 
+    # La banniere d'abord : la recherche de serie s'affiche dessous, pas avant.
+    print(f"=== {cli.mode_label(args)} ===")
+    args.tmdb_id = lookup.resolve_show_id(tmdb, args.dir, args.tmdb_id)
+    if args.tmdb_id is None:
+        sys.exit("Serie non identifiee : relance avec --tmdb-id.")
+
     # Details de la serie via TMDB (nom auto, + poster/synopsis pour les annexes)
     try:
         show = tmdb.series(args.tmdb_id)
@@ -434,7 +445,6 @@ def main():
         sys.exit(f"Echec de l'appel TMDB (serie) : {e}")
     args.series_name = args.series_name or show.get("name", "")
 
-    print(f"=== {cli.mode_label(args)} ===")
     print(f"    serie : {args.series_name}   |   source : TMDB {args.language} (id {args.tmdb_id})\n")
 
     if args.no_tag and not (args.artwork or args.recap):

@@ -63,9 +63,14 @@ Un sous-dossier `Saison N` par saison, les `.mkv` dedans, préfixés par leur nu
 `--dir` peut aussi pointer directement sur un dossier de saison.
 
 ```powershell
-python TV_Shows\Rename_Episodes.py --dir "D:\Series\Ma Serie" --tmdb-id 1234 --apply
-python TV_Shows\Metadata.py --dir "D:\Series\Ma Serie" --tmdb-id 1234 --apply --recap
+python TV_Shows\Rename_Episodes.py --dir "D:\Series\Ma Serie" --apply
+python TV_Shows\Metadata.py --dir "D:\Series\Ma Serie" --apply --recap
 ```
+
+La série est identifiée par une recherche TMDB sur le nom du dossier (celui du parent si `--dir`
+pointe sur une saison) : le résultat retenu est affiché, et les cas douteux — reboot portant le
+même nom, titre éloigné de la recherche — sont signalés. `--tmdb-id 1234` force l'identifiant
+quand la recherche se trompe ou ne trouve rien.
 
 `--recap` produit un `recap.html` unique (onglets par saison, vignettes encodées dans la page :
 rien à conserver à côté). `--artwork` écrit les `folder.jpg` (affiche anglaise) de la série et de
