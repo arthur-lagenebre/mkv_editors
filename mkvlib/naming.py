@@ -156,3 +156,52 @@ def fr_date(iso):
         return f"{int(d)} {FR_MONTHS[int(m) - 1]} {y}"
     except (AttributeError, ValueError, IndexError):
         return iso or ""
+
+
+# --------------------------------------------------------------------------
+# Fichiers d'une saison
+# --------------------------------------------------------------------------
+VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".wmv", ".ts", ".m2ts",
+              ".flv", ".webm", ".mpg", ".mpeg", ".mts", ".vob", ".ogm"}
+
+SUBTITLE_EXTS = {".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".sup", ".smi"}
+
+
+def files_with_ext(folder, extensions):
+    """Fichiers d'un dossier dont l'extension figure dans `extensions`, tries."""
+    return sorted(f for f in Path(folder).iterdir()
+                  if f.is_file() and f.suffix.lower() in extensions)
+
+
+def match_episode(filename, episodes, threshold, by_num=None):
+    """(episode|None, methode) pour un fichier : par numero, sinon par titre.
+
+    Le numero lu dans le nom prime ; a defaut on compare le nom aux titres TMDB
+    et on n'accepte qu'au-dela de `threshold`.
+    """
+    if by_num is None:
+        by_num = {e.get("episode_number"): e for e in episodes}
+    num = detect_episode_number(filename)
+    if num is not None and num in by_num:
+        return by_num[num], f"n.{num:02d} (depuis le nom)"
+    ep, score = best_title_match(filename, episodes)
+    return (ep if score >= threshold else None), f"titre (~{score:.0%})"
+
+
+def owned_numbers(folder, episodes, threshold=0.55):
+    """Numeros d'episode presents sur le disque, quel que soit le format video.
+
+    Sert a distinguer, dans la fiche recap, ce qu'on possede de ce qui manque -
+    sans rien lire dans les fichiers.
+    """
+    by_num = {e.get("episode_number"): e for e in episodes}
+    owned = set()
+    try:
+        fichiers = files_with_ext(folder, VIDEO_EXTS)
+    except OSError:
+        return owned
+    for f in fichiers:
+        ep, _ = match_episode(f.name, episodes, threshold, by_num)
+        if ep is not None:
+            owned.add(ep.get("episode_number"))
+    return owned

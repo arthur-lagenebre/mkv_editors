@@ -8,7 +8,7 @@ remux, c'est quasi instantané), pour que chaque fichier reste autonome.
 |---|---|
 | [Movies/Metadata.py](Movies/Metadata.py) | Étiquette des films : titre, date de sortie **française**, synopsis, casting, genres, jaquette, noms de pistes |
 | [TV_Shows/Metadata.py](TV_Shows/Metadata.py) | Idem pour une série, saison par saison, plus une fiche récap HTML |
-| [TV_Shows/Rename_Episodes.py](TV_Shows/Rename_Episodes.py) | Renomme les épisodes en `{numéro} - {titre TMDB}.ext` |
+| [TV_Shows/Rename_Episodes.py](TV_Shows/Rename_Episodes.py) | Renomme les épisodes en `{numéro} - {titre TMDB}.ext`, sous-titres compris |
 
 Le code commun aux trois vit dans [mkvlib/](mkvlib/) (accès TMDB, lecture/écriture des `.mkv`,
 analyse des noms de fichiers). Aucune dépendance pip : uniquement la bibliothèque standard.
@@ -67,13 +67,18 @@ python TV_Shows\Rename_Episodes.py --dir "D:\Series\Ma Serie" --apply
 python TV_Shows\Metadata.py --dir "D:\Series\Ma Serie" --apply --recap
 ```
 
+Les sous-titres posés à côté d'une vidéo (`.srt`, `.ass`, `.idx`/`.sub`…) sont renommés avec
+elle, en conservant ce qui suit le nom : `S01E02.fr.forced.srt` → `02 - Titre.fr.forced.srt`.
+
 La série est identifiée par une recherche TMDB sur le nom du dossier (celui du parent si `--dir`
 pointe sur une saison) : le résultat retenu est affiché, et les cas douteux — reboot portant le
 même nom, titre éloigné de la recherche — sont signalés. `--tmdb-id 1234` force l'identifiant
 quand la recherche se trompe ou ne trouve rien.
 
 `--recap` produit un `recap.html` unique (onglets par saison, vignettes encodées dans la page :
-rien à conserver à côté). `--artwork` écrit les `folder.jpg` (affiche anglaise) de la série et de
+rien à conserver à côté). Les épisodes absents du disque y sont grisés et étiquetés, avec un
+compteur par saison — l'inventaire se lit dans les noms de fichiers, tous formats vidéo
+confondus, donc il reste juste même avec `--no-tag`. `--artwork` écrit les `folder.jpg` (affiche anglaise) de la série et de
 chaque saison. `--no-tag` génère ces annexes sans toucher aux épisodes, pour une série qui n'est
 pas en `.mkv`.
 

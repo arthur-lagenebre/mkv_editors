@@ -57,6 +57,7 @@ Options principales :
   --artwork        ecrit folder.jpg (vignette de dossier) en anglais (serie et chaque saison)
   --recap          genere une fiche recap HTML de la serie (onglets par saison)
                    -> fichier UNIQUE : les vignettes sont encodees dedans, rien a cote
+                   -> les episodes absents du disque sont grises et comptes par saison
   --image-size STR taille TMDB jaquette / folder.jpg : w300 / w780 / original (defaut : w780)
   --still-size STR taille TMDB des vignettes du recap (defaut : w300)
 """
@@ -66,6 +67,7 @@ import base64
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -124,6 +126,30 @@ def episode_target(season, ep, series_name, opts):
 # ----------------------------------------------------------------------------
 # 2. Traitement d'une saison
 # ----------------------------------------------------------------------------
+@dataclass
+class SeasonRun:
+    """Une saison traitee : son dossier, ses donnees TMDB, et les numeros
+    d'episode effectivement presents sur le disque (pour la fiche recap)."""
+    folder: Path
+    number: int
+    data: dict
+    owned: set = field(default_factory=set)
+
+    @property
+    def episodes(self):
+        return self.data.get("episodes", [])
+
+
+def season_run(folder, number, data, args):
+    """Assemble une saison traitee, avec l'inventaire de ce qui est sur le disque.
+
+    L'inventaire se lit dans les noms de fichiers, tous formats video confondus :
+    il reste donc juste meme avec --no-tag, pour une serie qui n'est pas en .mkv.
+    """
+    owned = naming.owned_numbers(folder, data.get("episodes", []), args.match_threshold)
+    return SeasonRun(Path(folder), number, data, owned)
+
+
 def build_plan(mkv_dir, season, args, opts):
     """[(fichier, episode|None, methode, avertissement, info_mkvmerge|None), ...]"""
     episodes = season.get("episodes", [])
@@ -131,14 +157,7 @@ def build_plan(mkv_dir, season, args, opts):
     plan = []
     for f in sorted(Path(mkv_dir).glob("*.mkv")):
         f = f.resolve()
-        num = naming.detect_episode_number(f.name)
-        if num in by_num:
-            ep, method = by_num[num], f"n.{num:02d} (depuis le nom)"
-        else:
-            ep, score = naming.best_title_match(f.name, episodes)
-            method = f"titre (~{score:.0%})"
-            if score < args.match_threshold:
-                ep = None
+        ep, method = naming.match_episode(f.name, episodes, args.match_threshold, by_num)
 
         warn, info = "", None
         if ep:
@@ -230,11 +249,11 @@ def read_embedded_stills(recap_path):
     return dict(EMBEDDED_RE.findall(html))
 
 
-def collect_stills(seasons, size):
+def collect_stills(runs, size):
     """Retourne {cle: chemin TMDB} pour toutes les vignettes d'episode disponibles."""
     needed = {}
-    for _, season in seasons:
-        for ep in season.get("episodes", []):
+    for run in runs:
+        for ep in run.episodes:
             still = ep.get("still_path")
             key = still_key(still, size) if still else None
             if key:
@@ -274,38 +293,49 @@ def fetch_stills(needed, cached, size, tmdb, workers=8):
     return stills
 
 
-def build_recap_html(series_name, show, seasons, tmdb_id, stills, size):
+def build_recap_html(series_name, show, runs, tmdb_id, stills, size):
     """Rend la page HTML (pur rendu : ni reseau ni disque).
 
     'stills' = {cle: data-URI} ; un episode sans vignette disponible recoit un
-    emplacement vide plutot qu'une balise <img> sans source."""
+    emplacement vide plutot qu'une balise <img> sans source.
+
+    Les episodes absents du disque sont grises et etiquetes, avec un compteur par
+    saison. Une saison dont on ne connait aucun fichier n'est pas marquee du tout :
+    mieux vaut ne rien dire que tout declarer manquant."""
     def esc(s):
         return escape(str(s or ""))
 
     tabs, panels = [], []
-    for i, (num, season) in enumerate(seasons):
-        label = season.get("name") or f"Saison {num}"
-        tabs.append(f"<button class='tab{' active' if i == 0 else ''}' data-s='{num}'>{esc(label)}</button>")
+    for i, run in enumerate(runs):
+        label = run.data.get("name") or f"Saison {run.number}"
+        episodes = run.episodes
+        marque = bool(run.owned)          # sans inventaire, on ne juge pas
+        compteur = (f"<span class='cnt'>{len(run.owned)}/{len(episodes)}</span>"
+                    if marque and episodes else "")
+        tabs.append(f"<button class='tab{' active' if i == 0 else ''}' "
+                    f"data-s='{run.number}'>{esc(label)}{compteur}</button>")
         cards = []
-        for ep in season.get("episodes", []):
+        for ep in episodes:
             still = ep.get("still_path")
             key = still_key(still, size) if still else None
             uri = stills.get(key) if key else None
             img = (f"<img data-still='{key}' src='{uri}' alt='' decoding='async' loading='lazy'>"
                    if uri else "<div class='noimg'></div>")
 
+            absent = marque and ep.get("episode_number") not in run.owned
+            manque = "<span class='miss'>manquant</span>" if absent else ""
             rt = f" · {ep['runtime']} min" if ep.get("runtime") else ""
             cards.append(
-                "<div class='ep'>"
+                f"<div class='ep{' absent' if absent else ''}'>"
                 + img
                 + "<div class='meta'>"
                 + f"<div><span class='n'>{ep.get('episode_number', 0):02d}</span> "
-                + f"<span class='t'>{esc(ep.get('name'))}</span></div>"
+                + f"<span class='t'>{esc(ep.get('name'))}</span>{manque}</div>"
                 + f"<div class='d'>{esc(naming.fr_date(ep.get('air_date')))}{rt}</div>"
                 + f"<div class='o'>{esc(ep.get('overview'))}</div>"
                 + "</div></div>")
-        panels.append(f"<section class='season' data-s='{num}'{'' if i == 0 else ' hidden'}>"
-                      f"{''.join(cards)}</section>")
+        panels.append(f"<section class='season' data-s='{run.number}'"
+                      f"{'' if i == 0 else ' hidden'}>{''.join(cards)}</section>")
 
     return (
         "<!DOCTYPE html><html lang='fr'><head><meta charset='utf-8'>"
@@ -325,6 +355,11 @@ def build_recap_html(series_name, show, seasons, tmdb_id, stills, size):
         ".ep{display:flex;gap:16px;padding:14px 0;border-bottom:1px solid #21232b}"
         ".ep img,.ep .noimg{width:160px;height:90px;object-fit:cover;border-radius:8px;"
         "background:#21232b;flex:none}"
+        ".ep.absent{opacity:.42}"
+        ".miss{margin-left:8px;padding:1px 7px;border-radius:999px;font-size:11px;"
+        "text-transform:uppercase;letter-spacing:.04em;background:#3a2a2e;color:#ff9aa6;"
+        "vertical-align:1px}"
+        ".cnt{margin-left:7px;font-size:12px;opacity:.65;font-variant-numeric:tabular-nums}"
         ".ep .meta{flex:1}.ep .n{color:#7cc4ff;font-weight:600}"
         ".ep .t{font-weight:600}.ep .d{color:#9aa0aa;font-size:14px;margin:2px 0 6px}"
         ".ep .o{color:#c7ccd4;font-size:14px}"
@@ -352,19 +387,19 @@ def _write_text(path, text, apply):
 
 def generate_sidecars(root_dir, series_name, show, processed, args, tmdb):
     """Ecrit posters de dossier (affiche EN) / fiche recap selon les options.
-    processed = [(dossier_saison, numero, donnees_saison), ...]."""
+    processed = [SeasonRun, ...]."""
     if not (args.artwork or args.recap):
         return
     apply = args.apply and not args.verify
     print("--- annexes ---")
 
     if args.artwork:
-        for folder, num, season in processed:
+        for run in processed:
             poster = artwork.english_poster(
-                lambda: tmdb.season(args.tmdb_id, num, artwork.ARTWORK_LANG),
-                season.get("poster_path"))
-            print(f"  [saison {num}] affiche (EN) : "
-                  f"{artwork.write_poster(poster, folder, apply, tmdb)}")
+                lambda: tmdb.season(args.tmdb_id, run.number, artwork.ARTWORK_LANG),
+                run.data.get("poster_path"))
+            print(f"  [saison {run.number}] affiche (EN) : "
+                  f"{artwork.write_poster(poster, run.folder, apply, tmdb)}")
         poster = artwork.english_poster(
             lambda: tmdb.series(args.tmdb_id, artwork.ARTWORK_LANG),
             show.get("poster_path"))
@@ -372,12 +407,11 @@ def generate_sidecars(root_dir, series_name, show, processed, args, tmdb):
 
     if args.recap:
         out = Path(root_dir) / "recap.html"
-        seasons = [(n, s) for _, n, s in processed]
-        needed = collect_stills(seasons, args.still_size)
+        needed = collect_stills(processed, args.still_size)
         # En simulation on ne telecharge rien : la page est rendue sans vignette.
         stills = (fetch_stills(needed, read_embedded_stills(out), args.still_size, tmdb)
                   if apply else {})
-        html = build_recap_html(series_name, show, seasons, args.tmdb_id, stills, args.still_size)
+        html = build_recap_html(series_name, show, processed, args.tmdb_id, stills, args.still_size)
         print(f"  [serie] {_write_text(out, html, apply)}"
               + (f"  ({len(html) / 1_048_576:.1f} Mo, {len(stills)} vignette(s) integree(s))"
                  if stills else ""))
@@ -469,7 +503,7 @@ def main():
                 m, tot = process_season(sub, data, args, opts, tmdb)
                 total_m += m
                 total_f += tot
-            processed.append((sub, num, data))
+            processed.append(season_run(sub, num, data, args))
             print()
         if not args.no_tag:
             print(f"TOTAL : {total_m}/{total_f} fichier(s) associe(s) "
@@ -487,7 +521,7 @@ def main():
         else:
             process_season(args.dir, data, args, opts, tmdb)
         generate_sidecars(args.dir, args.series_name, show,
-                          [(Path(args.dir), num, data)], args, tmdb)
+                          [season_run(Path(args.dir), num, data, args)], args, tmdb)
 
 
 if __name__ == "__main__":

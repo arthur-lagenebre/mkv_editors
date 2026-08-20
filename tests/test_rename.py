@@ -32,9 +32,9 @@ class RenameTestCase(unittest.TestCase):
         args = types.SimpleNamespace(apply=apply, match_threshold=seuil)
         sortie = io.StringIO()
         with redirect_stdout(sortie):
-            resultat = rename.rename_season(self.dir, saison, args)
+            tally = rename.rename_season(self.dir, saison, args)
         self.sortie = sortie.getvalue()
-        return resultat, sorted(p.name for p in self.dir.iterdir())
+        return tally, sorted(p.name for p in self.dir.iterdir())
 
 
 class TestRenommage(RenameTestCase):
@@ -46,25 +46,25 @@ class TestRenommage(RenameTestCase):
     def test_casse_seule(self):
         # Regression : Windows voit deja le nom cible comme pris, le fichier restait tel quel.
         self.creer("01 - le debut.mkv")
-        ((ok, total), fichiers) = self.lancer()
+        (tally, fichiers) = self.lancer()
         self.assertEqual(fichiers, ["01 - Le debut.mkv"])
-        self.assertEqual((ok, total), (1, 1))
+        self.assertEqual((tally.named, tally.total), (1, 1))
 
     def test_deux_fichiers_pour_un_episode(self):
         # Regression : la collision n'apparaissait qu'a l'ecriture, sans explication.
         self.creer("S01E02 - vf.mkv", "S01E02 - vostfr.mkv")
-        ((ok, total), fichiers) = self.lancer()
+        (tally, fichiers) = self.lancer()
         self.assertIn("02 - Suite.mkv", fichiers)
         self.assertIn("S01E02 - vostfr.mkv", fichiers)     # le second est laisse intact
-        self.assertEqual((ok, total), (1, 2))
+        self.assertEqual((tally.named, tally.total), (1, 2))
         self.assertIn("[DOUBLON]", self.sortie)
 
     def test_numerotation_croisee(self):
         # Regression : chacun visait le nom que l'autre portait, les deux etaient abandonnes.
         self.creer("01 - Suite.mkv", "02 - Le debut.mkv")
-        ((ok, _), fichiers) = self.lancer()
+        (tally, fichiers) = self.lancer()
         self.assertEqual(fichiers, ["01 - Le debut.mkv", "02 - Suite.mkv"])
-        self.assertEqual(ok, 2)
+        self.assertEqual(tally.named, 2)
 
     def test_fichier_etranger_non_ecrase(self):
         self.creer("01 - Le debut.mkv", "S01E01 - autre version.mkv")
@@ -78,11 +78,6 @@ class TestRenommage(RenameTestCase):
         (_, fichiers) = self.lancer(apply=False)
         self.assertEqual(fichiers, ["S01E01.mkv"])
 
-    def test_extensions_non_video_ignorees(self):
-        self.creer("S01E01.mkv", "S01E01.srt", "notes.txt")
-        (_, fichiers) = self.lancer()
-        self.assertEqual(sorted(fichiers), ["01 - Le debut.mkv", "S01E01.srt", "notes.txt"])
-
     def test_largeur_du_numero_suit_la_saison(self):
         saison = {"season_number": 1,
                   "episodes": [{"episode_number": n, "name": f"Ep{n}"} for n in range(1, 101)]}
@@ -92,16 +87,68 @@ class TestRenommage(RenameTestCase):
 
     def test_non_associe_laisse_en_place(self):
         self.creer("bande annonce.mkv")
-        ((ok, total), fichiers) = self.lancer(seuil=0.95)
+        (tally, fichiers) = self.lancer(seuil=0.95)
         self.assertEqual(fichiers, ["bande annonce.mkv"])
-        self.assertEqual((ok, total), (0, 1))
+        self.assertEqual((tally.named, tally.total), (0, 1))
         self.assertIn("[NON ASSOCIE]", self.sortie)
 
     def test_saison_sans_donnees_tmdb(self):
         self.creer("S01E01.mkv")
-        (resultat, fichiers) = self.lancer(saison={"season_number": 1, "episodes": []})
-        self.assertEqual(resultat, (0, 0))
+        (tally, fichiers) = self.lancer(saison={"season_number": 1, "episodes": []})
+        self.assertEqual((tally.named, tally.total), (0, 0))
         self.assertEqual(fichiers, ["S01E01.mkv"])
+
+
+class TestSousTitres(RenameTestCase):
+    def test_sous_titre_suit_la_video(self):
+        self.creer("S01E01.mkv", "S01E01.srt")
+        (tally, fichiers) = self.lancer()
+        self.assertEqual(fichiers, ["01 - Le debut.mkv", "01 - Le debut.srt"])
+        self.assertEqual(tally.subtitles, 1)
+
+    def test_langue_et_drapeaux_conserves(self):
+        self.creer("S01E01.mkv", "S01E01.fr.srt", "S01E01.en.forced.ass")
+        (tally, fichiers) = self.lancer()
+        self.assertEqual(fichiers, ["01 - Le debut.en.forced.ass",
+                                    "01 - Le debut.fr.srt",
+                                    "01 - Le debut.mkv"])
+        self.assertEqual(tally.subtitles, 2)
+
+    def test_paire_idx_sub(self):
+        self.creer("S01E02.mkv", "S01E02.idx", "S01E02.sub")
+        (_, fichiers) = self.lancer()
+        self.assertEqual(fichiers, ["02 - Suite.idx", "02 - Suite.mkv", "02 - Suite.sub"])
+
+    def test_extension_normalisee_en_minuscules(self):
+        self.creer("S01E01.mkv", "S01E01.FR.SRT")
+        (_, fichiers) = self.lancer()
+        self.assertIn("01 - Le debut.FR.srt", fichiers)
+
+    def test_video_deja_nommee_mais_pas_le_sous_titre(self):
+        # Cas d'un dossier renomme avant que les sous-titres soient pris en charge.
+        self.creer("01 - Le debut.mkv", "01 - Le debut.srt")
+        (self.dir / "S01E01.srt").write_text("orphelin", encoding="utf-8")
+        (tally, fichiers) = self.lancer()
+        self.assertEqual(tally.subtitles, 0)          # rien a faire pour celui qui suit deja
+        self.assertIn("S01E01.srt", fichiers)         # l'autre ne porte pas le nom de la video
+
+    def test_sous_titre_d_un_fichier_non_associe(self):
+        self.creer("bande annonce.mkv", "bande annonce.srt")
+        (tally, fichiers) = self.lancer(seuil=0.95)
+        self.assertEqual(sorted(fichiers), ["bande annonce.mkv", "bande annonce.srt"])
+        self.assertEqual(tally.subtitles, 0)
+
+    def test_autres_fichiers_ignores(self):
+        self.creer("S01E01.mkv", "notes.txt", "affiche.jpg")
+        (_, fichiers) = self.lancer()
+        self.assertEqual(sorted(fichiers), ["01 - Le debut.mkv", "affiche.jpg", "notes.txt"])
+
+    def test_simulation_annonce_sans_renommer(self):
+        self.creer("S01E01.mkv", "S01E01.fr.srt")
+        (tally, fichiers) = self.lancer(apply=False)
+        self.assertEqual(sorted(fichiers), ["S01E01.fr.srt", "S01E01.mkv"])
+        self.assertEqual(tally.subtitles, 1)          # annonce ce qui serait fait
+        self.assertIn("01 - Le debut.fr.srt", self.sortie)
 
 
 if __name__ == "__main__":
