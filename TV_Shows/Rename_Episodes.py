@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 Rename_Episodes.py — Renomme les episodes d'une serie avec les noms TMDB (en francais).
 
 Format applique :  "{numero} - {nom de l'episode}.ext"
@@ -17,190 +17,163 @@ d'env TMDB_API_KEY > constante TMDB_KEY.
 Structure : un sous-dossier "Saison N" par saison, ou --dir pointant sur un dossier de saison.
 
 Usage :
-  python Rename_Episodes.py --dir "D:\\Series\\Ma Serie" --tmdb-id 1234           # simulation
-  python Rename_Episodes.py --dir "D:\\Series\\Ma Serie" --tmdb-id 1234 --apply   # renomme
+  python Rename_Episodes.py --dir "D:\Series\Ma Serie" --tmdb-id 1234           # simulation
+  python Rename_Episodes.py --dir "D:\Series\Ma Serie" --tmdb-id 1234 --apply   # renomme
 """
 
 import argparse
-import json
 import os
-import re
 import sys
 from pathlib import Path
-from difflib import SequenceMatcher
-from urllib.request import urlopen, Request
-from urllib.error import URLError
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
+from mkvlib import cli, naming                                    # noqa: E402
+from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 
 # ============================================================================
 # Cle API TMDB (par priorite : .env > env TMDB_API_KEY > ceci).
 TMDB_KEY = ""
 # ============================================================================
 
-def load_dotenv(filename=".env"):
-    """Charge un fichier .env (lignes CLE=valeur) dans les variables d'environnement.
-
-    Le fichier est cherche en remontant depuis le dossier du script, puis depuis le
-    dossier courant ; on s'arrete au premier trouve. Les variables deja definies
-    dans l'environnement ne sont jamais ecrasees. Aucune dependance pip.
-    """
-    for start in (Path(__file__).resolve().parent, Path.cwd().resolve()):
-        for folder in (start, *start.parents):
-            path = folder / filename
-            if not path.is_file():
-                continue
-            for line in path.read_text(encoding="utf-8-sig").splitlines():
-                line = line.strip()
-                if line.startswith("export "):
-                    line = line[7:].lstrip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                name, _, value = line.partition("=")
-                name, value = name.strip(), value.strip()
-                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                    value = value[1:-1]
-                if name:
-                    os.environ.setdefault(name, value)
-            return path
-    return None
-
-
-TMDB_API = "https://api.themoviedb.org/3"
-
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".wmv", ".ts", ".m2ts",
               ".flv", ".webm", ".mpg", ".mpeg", ".mts", ".vob", ".ogm"}
 
-# Detection du numero d'episode dans un nom de fichier.
-P_SE = re.compile(r"[Ss](\d{1,2})[\s._-]*[Ee](\d{1,3})")          # S01E05, S1E5
-P_X = re.compile(r"(?<!\d)(\d{1,2})\s*[xX]\s*(\d{2,3})(?!\d)")     # 1x05  (evite 1920x1080)
-P_EP = re.compile(r"[Ee]p(?:isode)?[\s._-]*(\d{1,3})")            # Episode 5, Ep05
-P_LEAD = re.compile(r"^\s*(\d{1,2})[\s._\-]")                     # 01 - Titre, 1. Titre
-SEASON_RE = re.compile(r"^(?:saison|season|s)[\s_]*0*(\d+)$", re.IGNORECASE)
+
+# ----------------------------------------------------------------------------
+# Renommage sur le disque
+# ----------------------------------------------------------------------------
+def _free_name(path):
+    """Nom temporaire libre a cote de `path`, pour un renommage en deux temps."""
+    for i in range(1, 1000):
+        candidate = path.with_name(f"{path.stem}.tmp{i}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+    raise OSError("aucun nom temporaire libre")
+
+
+def _same_file(a, b):
+    """Vrai si les deux chemins designent le meme fichier (casse differente incluse)."""
+    try:
+        return b.exists() and a.samefile(b)
+    except OSError:
+        return False
+
+
+def rename_path(src, dst):
+    """Renomme src en dst, y compris quand seule la CASSE change.
+
+    Windows considere "titre.mkv" et "Titre.mkv" comme le meme fichier : le
+    renommage direct est refuse, il faut passer par un nom intermediaire.
+    """
+    if _same_file(src, dst):
+        tmp = _free_name(src)
+        src.rename(tmp)
+        tmp.rename(dst)
+    else:
+        src.rename(dst)
+
+
+def apply_renames(planned):
+    """Applique les renommages prevus. Retourne le nombre de fichiers renommes.
+
+    Un fichier peut viser le nom qu'un autre porte encore (numerotation decalee
+    d'un cran) : on repasse alors sur les cas bloques une fois les autres liberes,
+    et on casse les cycles restants (01 <-> 02) par un nom temporaire.
+    """
+    done, pending = 0, list(planned)
+    while pending:
+        blocked, progress = [], False
+        for src, dst in pending:
+            if dst.exists() and not _same_file(src, dst):
+                blocked.append((src, dst))
+                continue
+            try:
+                rename_path(src, dst)
+            except OSError as e:
+                print(f"  [ECHEC] {src.name} -> {dst.name} : {e}")
+                continue
+            done += 1
+            progress = True
+        if not blocked:
+            break
+        if progress:                      # des noms se sont liberes : on retente
+            pending = blocked
+            continue
+        cycle = {os.path.normcase(str(s)) for s, _ in blocked}
+        stuck = next((pair for pair in blocked
+                      if os.path.normcase(str(pair[1])) in cycle), None)
+        if stuck is None:                 # vrais conflits : des fichiers etrangers
+            for _, dst in blocked:
+                print(f"  [IGNORE] existe deja : {dst.name}")
+            break
+        src, dst = stuck                  # cycle : on degage le premier maillon
+        try:
+            tmp = _free_name(src)
+            src.rename(tmp)
+        except OSError as e:
+            print(f"  [ECHEC] {src.name} -> {dst.name} : {e}")
+            break
+        pending = [(tmp if s == src else s, d) for s, d in blocked]
+    return done
 
 
 # ----------------------------------------------------------------------------
-# Detection des saisons
+# Plan d'une saison
 # ----------------------------------------------------------------------------
-def _season_number(name):
-    m = SEASON_RE.match(Path(name).stem)
-    return int(m.group(1)) if m else None
+def plan_season(folder, season, threshold):
+    """Prevoit les renommages d'un dossier. Retourne (planned, deja_bons, total).
 
-
-def find_seasons(root):
-    """[(dossier_saison, numero), ...] pour chaque sous-dossier 'Saison N' ; [] sinon."""
-    root = Path(root)
-    if not root.is_dir():
-        return []
-    pairs = []
-    for sub in sorted(p for p in root.iterdir() if p.is_dir()):
-        num = _season_number(sub.name)
-        if num is not None:
-            pairs.append((sub, num))
-    return sorted(pairs, key=lambda x: x[1])
-
-
-# ----------------------------------------------------------------------------
-# Source TMDB
-# ----------------------------------------------------------------------------
-def _tmdb_get(endpoint, key, language):
-    url = f"{TMDB_API}/{endpoint}"
-    sep = "&" if "?" in url else "?"
-    headers = {"User-Agent": "rename_ep/1.0", "Accept": "application/json"}
-    if key.startswith("ey") and key.count(".") == 2:          # token v4
-        headers["Authorization"] = f"Bearer {key}"
-        url += f"{sep}language={language}"
-    else:                                                     # cle v3
-        url += f"{sep}api_key={key}&language={language}"
-    with urlopen(Request(url, headers=headers), timeout=30) as r:
-        return json.loads(r.read().decode("utf-8"))
-
-
-def tmdb_season(show_id, season_number, key, language):
-    return _tmdb_get(f"tv/{show_id}/season/{season_number}", key, language)
-
-
-# ----------------------------------------------------------------------------
-# Association fichier <-> episode
-# ----------------------------------------------------------------------------
-def detect_episode_number(filename):
-    for pat in (P_SE, P_X):
-        m = pat.search(filename)
-        if m:
-            return int(m.group(2))
-    for pat in (P_EP, P_LEAD):
-        m = pat.search(filename)
-        if m:
-            return int(m.group(1))
-    return None
-
-
-def best_title_match(filename, episodes):
-    stem = Path(filename).stem.lower()
-    best, best_score = None, 0.0
-    for ep in episodes:
-        title = ep.get("name", "").lower()
-        head = title.split(":")[0].strip()
-        score = max(SequenceMatcher(None, stem, title).ratio(),
-                    SequenceMatcher(None, stem, head).ratio())
-        if head and head in stem:
-            score = max(score, 0.9)
-        if score > best_score:
-            best, best_score = ep, score
-    return best, best_score
-
-
-# ----------------------------------------------------------------------------
-# Renommage
-# ----------------------------------------------------------------------------
-def safe_name(s):
-    s = re.sub(r'[<>:"/\\|?*]', "", s or "")   # caracteres interdits sous Windows
-    s = re.sub(r"\s+", " ", s).strip()
-    return s.rstrip(". ")
-
-
-def rename_season(folder, season, args):
-    """Renomme les videos d'un dossier au format '{NN} - {nom}.ext'. Retourne (ok, total)."""
+    `planned` = [(source, destination), ...]. Deux fichiers qui visent le meme
+    nom (deux versions du meme episode, par exemple) sont signales ici : au
+    moment d'ecrire, le second echouerait sans explication.
+    """
     episodes = season.get("episodes", [])
     by_num = {e.get("episode_number"): e for e in episodes}
     if not by_num:
         print("  aucune donnee d'episode TMDB pour cette saison")
-        return 0, 0
-    width = max(2, len(str(max(by_num))))   # meme nb de digits pour toute la saison
+        return [], 0, 0
 
-    files = sorted(f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in VIDEO_EXTS)
+    width = max(2, len(str(max(by_num))))   # meme nb de digits pour toute la saison
+    files = sorted(f for f in Path(folder).iterdir()
+                   if f.is_file() and f.suffix.lower() in VIDEO_EXTS)
     if not files:
         print("  aucun fichier video")
-        return 0, 0
+        return [], 0, 0
 
-    planned, done = [], 0
+    planned, claimed, already = [], {}, 0
     for f in files:
-        num = detect_episode_number(f.name)
-        ep = by_num.get(num)
+        ep = by_num.get(naming.detect_episode_number(f.name))
         if ep is None:
-            ep, score = best_title_match(f.name, episodes)
-            if score < args.match_threshold:
+            ep, score = naming.best_title_match(f.name, episodes)
+            if score < threshold:
                 ep = None
         if ep is None:
             print(f"  [NON ASSOCIE] {f.name}")
             continue
+
         n = ep.get("episode_number", 0)
-        newname = f"{n:0{width}d} - {safe_name(ep.get('name', ''))}{f.suffix.lower()}"
+        newname = f"{n:0{width}d} - {naming.safe_name(ep.get('name', ''))}{f.suffix.lower()}"
         dst = f.with_name(newname)
+        key = os.path.normcase(newname)
+        if key in claimed:
+            print(f"  [DOUBLON] {f.name} vise le meme nom que {claimed[key].name} -> ignore")
+            continue
+        claimed[key] = f
         if dst.name == f.name:
-            done += 1                        # deja au bon nom
+            already += 1
             continue
         planned.append((f, dst))
-        print(f"  E{n:0{width}d} : {f.name}")
-        print(f"          -> {newname}")
+        print(f"  {n:0{width}d} : {f.name}")
+        print(f"       -> {newname}")
+    return planned, already, len(files)
 
+
+def rename_season(folder, season, args):
+    """Affiche le plan et l'applique si --apply. Retourne (au_bon_nom, total)."""
+    planned, already, total = plan_season(folder, season, args.match_threshold)
     if args.apply:
-        for src, dst in planned:
-            if dst.exists():
-                print(f"  [IGNORE] existe deja : {dst.name}")
-                continue
-            src.rename(dst)
-            done += 1
-
-    return done, len(files)
+        already += apply_renames(planned)
+    return already, total
 
 
 # ----------------------------------------------------------------------------
@@ -218,25 +191,20 @@ def main():
                     help="Score minimal pour une association par titre (0-1)")
     args = ap.parse_args()
 
-    load_dotenv()  # rend disponibles les cles du fichier .env (non committe)
-    args.tmdb_key = (os.environ.get("TMDB_API_KEY")
-                     or os.environ.get("TMDB_KEY") or TMDB_KEY or None)
-    if not args.tmdb_key:
-        sys.exit("Aucune cle TMDB. Renseigne la ligne TMDB_KEY=... du fichier .env "
-                 "(voir .env.example), la variable d'environnement TMDB_API_KEY, "
-                 "ou la constante TMDB_KEY en haut du fichier.")
+    cli.setup_console()
+    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="rename_ep/1.0")
 
-    mode = "APPLICATION" if args.apply else "SIMULATION (rien ne sera renomme ; ajoute --apply)"
+    mode = cli.mode_label(args, "rien ne sera renomme ; ajoute --apply")
     print(f"=== {mode} ===   source : TMDB {args.language}\n")
 
-    seasons = find_seasons(args.dir)
+    seasons = naming.find_seasons(args.dir)
     total_done = total = 0
     if seasons:
         for sub, num in seasons:
             print(f"--- {sub.name}  (TMDB saison {num}) ---")
             try:
-                data = tmdb_season(args.tmdb_id, num, args.tmdb_key, args.language)
-            except (URLError, OSError) as e:
+                data = tmdb.season(args.tmdb_id, num)
+            except TmdbError as e:
                 print(f"  echec TMDB saison {num} : {e} -> saison ignoree\n")
                 continue
             d, t = rename_season(sub, data, args)
@@ -244,11 +212,11 @@ def main():
             total += t
             print()
     else:
-        num = _season_number(Path(args.dir).name) or 1
+        num = naming.season_number(Path(args.dir).name) or 1
         print(f"--- {Path(args.dir).name}  (TMDB saison {num}) ---")
         try:
-            data = tmdb_season(args.tmdb_id, num, args.tmdb_key, args.language)
-        except (URLError, OSError) as e:
+            data = tmdb.season(args.tmdb_id, num)
+        except TmdbError as e:
             sys.exit(f"Echec de l'appel TMDB (saison {num}) : {e}")
         d, t = rename_season(Path(args.dir), data, args)
         total_done += d
@@ -258,4 +226,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except TmdbAuthError as e:
+        sys.exit(f"TMDB : {e}")
