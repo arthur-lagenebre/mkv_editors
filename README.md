@@ -11,6 +11,7 @@ remux, c'est quasi instantané), pour que chaque fichier reste autonome.
 | [Movies/Metadata.py](Movies/Metadata.py) | Étiquette des films : titre, date de sortie **française**, synopsis, casting, genres, jaquette, noms de pistes ; fiche récap de la médiathèque |
 | [TV_Shows/Metadata.py](TV_Shows/Metadata.py) | Idem pour une série, saison par saison, plus une fiche récap HTML |
 | [TV_Shows/Rename_Episodes.py](TV_Shows/Rename_Episodes.py) | Renomme les épisodes en `{numéro} - {titre TMDB}.ext`, sous-titres compris |
+| [Movies/Rename_Movies.py](Movies/Rename_Movies.py) | Renomme les dossiers de films en `Titre (Année)`, avec épinglage de l'id TMDB |
 
 Le code commun aux trois vit dans [mkvlib/](mkvlib/) (accès TMDB, lecture/écriture des `.mkv`,
 analyse des noms de fichiers). Aucune dépendance pip : uniquement la bibliothèque standard.
@@ -61,6 +62,19 @@ python Movies\Metadata.py --dir "D:\Films" --apply            # applique
 python Movies\Metadata.py --dir "D:\Films\Dune (2021)" --tmdb-id 438631 --apply   # force l'id
 python Movies\Metadata.py --dir "D:\Films" --no-tag --recap --apply   # fiche seule
 ```
+
+Comme toute la reconnaissance repose sur le nom du dossier,
+[Rename_Movies.py](Movies/Rename_Movies.py) le remet d'aplomb depuis TMDB — et `--pin-id` y
+écrit l'identifiant, après quoi plus rien n'est cherché ni ne peut se tromper :
+
+```powershell
+python Movies\Rename_Movies.py --dir "D:\Films"                    # simulation
+python Movies\Rename_Movies.py --dir "D:\Films" --apply --pin-id   # renomme et épingle
+```
+
+Un préfixe d'ordre de saga est conservé (`1 - Iron Man` → `1 - Iron Man (2008)`), les
+sous-titres suivent leur film en mode « `.mkv` à plat », et un identifiant déjà épinglé n'est
+jamais retiré.
 
 `--recap` écrit un `recap.html` à la racine de `--dir` : un mur d'affiches groupé par saga,
 avec **les films qui manquent à chaque saga** — TMDB connaît la composition des collections,

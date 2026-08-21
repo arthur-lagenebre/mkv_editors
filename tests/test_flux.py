@@ -100,6 +100,21 @@ class TestAnnexesDesFilms(FluxTestCase):
         self.assertTrue((self.racine / "recap.html").exists())
 
 
+class TestDoublons(FluxTestCase):
+    def test_deux_dossiers_pour_un_film(self):
+        # Le recap n'en montrera qu'une vignette (les films y sont indexes par id) :
+        # l'ecart avec le total doit etre explique, pas laisse deviner.
+        with tempfile.TemporaryDirectory() as d:
+            racine = Path(d)
+            for nom in ("Dune (2021)", "Dune 4K (2021)"):
+                (racine / nom).mkdir()
+                (racine / nom / "film.mkv").write_text("x", encoding="utf-8")
+            with mock.patch.object(films.mkv, "check_tools", lambda **k: False):
+                _, sortie = self.lancer(films, ["--dir", str(racine), "--no-tag"])
+        self.assertIn("[DOUBLON]", sortie)
+        self.assertIn("TOTAL : 2/2", sortie)       # les deux restent traites
+
+
 class TestSaisonUnique(FluxTestCase):
     def lancer_rename(self, nom_du_dossier):
         with tempfile.TemporaryDirectory() as d:
