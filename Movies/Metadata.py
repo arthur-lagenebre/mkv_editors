@@ -15,7 +15,8 @@ Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux) :
   - le nom des pistes SOUS-TITRES -> uniquement les drapeaux actifs (Forced, SDH...), ou "Full"
   - les DRAPEAUX 'par defaut'     -> une seule piste audio par defaut (la FR), aucun sous-titre
 
-Dependances EXTERNES (dans le PATH) : mkvpropedit + mkvmerge (MKVToolNix), ffprobe (FFmpeg).
+Dependances EXTERNES (dans le PATH) : mkvpropedit + mkvmerge + mkvextract (MKVToolNix),
+ffprobe (FFmpeg).
 Aucune dependance pip. Necessite Internet (API TMDB + jaquettes).
 Le code partage avec les autres scripts du depot vit dans mkvlib/ (a la racine).
 
@@ -128,13 +129,15 @@ def movie_target(movie, opts):
 def process_movie(folder, path, movie, args, opts, tmdb, foldered):
     """Traite un film et retourne son Report."""
     report = mkv.Report(matched=1, total=1)
-    info, _, note = mkv.inspect(path, args.probe)   # debits compris, pour le nom des pistes
-    if note:
-        print(f"      {note}")
+    # Les tags ne sont relus que si on doit les comparer : un processus de plus.
+    lecture = mkv.inspect(path, args.probe, with_tags=args.verify or args.skip_done)
+    info, tags = lecture.info, lecture.tags
+    if lecture.note:
+        print(f"      {lecture.note}")
     target = movie_target(movie, opts)
 
     if args.verify:
-        diffs = [(lbl, det) for lbl, ok, det in mkv.verify(info, target, opts) if not ok]
+        diffs = [(lbl, det) for lbl, ok, det in mkv.verify(info, target, opts, tags) if not ok]
         for lbl, det in diffs:
             print(f"      [DIFF] {lbl} : actuel = {det!r}")
         if diffs:
@@ -151,7 +154,7 @@ def process_movie(folder, path, movie, args, opts, tmdb, foldered):
         print(line)
 
     if args.apply:
-        if args.skip_done and mkv.is_conform(info, target, opts):
+        if args.skip_done and mkv.is_conform(info, target, opts, tags):
             print("      [SKIP] deja a jour")
         else:
             code, msg = mkv.write(path, info, target, opts, tmdb)

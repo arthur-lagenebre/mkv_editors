@@ -13,6 +13,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 
 from .tmdb import TmdbError
@@ -52,7 +53,8 @@ def check_tools(needs_mkvtoolnix=True):
     """
     if not needs_mkvtoolnix:
         return False
-    missing = [t for t in ("mkvpropedit", "mkvmerge") if shutil.which(t) is None]
+    missing = [t for t in ("mkvpropedit", "mkvmerge", "mkvextract")
+               if shutil.which(t) is None]
     if missing:
         print("Outils manquants dans le PATH :", ", ".join(missing))
         print("  Installe MKVToolNix : winget install MoritzBunkus.MKVToolNix")
@@ -78,6 +80,13 @@ def identify(path):
         return json.loads(out), ""
     except TOOL_FAILURES as e:
         return None, f"lecture impossible par mkvmerge ({_reason(e)})"
+
+
+@dataclass
+class Probe:
+    """Ce que ffprobe nous apprend d'un fichier."""
+    duration_min: float | None = None
+    audio_bitrates: dict = field(default_factory=dict)   # {index audio 1-based: kb/s}
 
 
 def probe(path):
@@ -127,34 +136,79 @@ def annotate_bitrates(info, path):
     return result
 
 
+def parse_tags(xml):
+    """{(niveau de cible, nom, valeur)} pour les tags de niveau film/saison/serie.
+
+    Les tags de PISTE sont ecartes : ce sont les statistiques ecrites par
+    --add-track-statistics-tags, qui ne viennent pas de TMDB. Et un bloc sans
+    TargetTypeValue vaut 50 : c'est la valeur par defaut de Matroska, que
+    mkvpropedit omet a l'ecriture - sans cette equivalence, un fichier
+    fraichement etiquete paraitrait deja different de ce qu'on vient d'y ecrire.
+    """
+    try:
+        root = ElementTree.fromstring(xml.lstrip("﻿"))
+    except (ElementTree.ParseError, AttributeError):
+        return set()
+    tags = set()
+    for bloc in root.findall("Tag"):
+        targets = bloc.find("Targets")
+        if targets is not None and targets.find("TrackUID") is not None:
+            continue
+        niveau = targets.find("TargetTypeValue") if targets is not None else None
+        niveau = int(niveau.text) if (niveau is not None and niveau.text) else 50
+        for simple in bloc.findall("Simple"):
+            tags.add((niveau, simple.findtext("Name") or "", simple.findtext("String") or ""))
+    return tags
+
+
+def read_tags(path):
+    """Tags deja ecrits dans le fichier, sous la forme rendue par parse_tags.
+
+    mkvmerge -J ne donne pas leur contenu : il faut passer par mkvextract.
+    """
+    try:
+        out = run_tool(["mkvextract", str(path), "tags", "-"], check=True).stdout
+    except TOOL_FAILURES:
+        return set()
+    return parse_tags(out) if out else set()
+
+
 READ_WORKERS = 8      # lectures simultanees : c'est de l'attente de sous-processus
 
 
-def inspect(path, with_probe=True):
-    """(info, probe, remarque) pour un fichier. Sans affichage : appelable en parallele."""
+@dataclass
+class Reading:
+    """Ce qu'on a pu lire d'un fichier, sans rien afficher."""
+    info: dict | None = None
+    probe: Probe = field(default_factory=Probe)
+    tags: set | None = None        # None = non relus (lecture non demandee)
+    note: str = ""
+
+
+def inspect(path, with_probe=True, with_tags=False):
+    """Lecture complete d'un fichier. Sans affichage : appelable en parallele.
+
+    Les tags ne sont relus que si on en a besoin (--verify, --skip-done) : c'est
+    un sous-processus de plus par fichier.
+    """
     info, note = identify(path)
     probe = annotate_bitrates(info, path) if (info and with_probe) else Probe()
-    return info, probe, note
+    tags = read_tags(path) if (info and with_tags) else None
+    return Reading(info, probe, tags, note)
 
 
-def inspect_all(paths, with_probe=True, workers=READ_WORKERS):
-    """{chemin: (info, probe, remarque)} pour plusieurs fichiers, lus en parallele.
+def inspect_all(paths, with_probe=True, with_tags=False, workers=READ_WORKERS):
+    """{chemin: Reading} pour plusieurs fichiers, lus en parallele.
 
-    Chaque fichier coute deux sous-processus (mkvmerge puis ffprobe) qu'on passe
-    son temps a attendre : une saison entiere se lit en un seul de ces delais.
+    Chaque fichier coute deux a trois sous-processus qu'on passe son temps a
+    attendre : une saison entiere se lit en un seul de ces delais.
     """
     paths = list(paths)
+    lire = lambda p: inspect(p, with_probe, with_tags)      # noqa: E731
     if len(paths) < 2:
-        return {p: inspect(p, with_probe) for p in paths}
+        return {p: lire(p) for p in paths}
     with ThreadPoolExecutor(max_workers=min(workers, len(paths))) as pool:
-        return dict(zip(paths, pool.map(lambda p: inspect(p, with_probe), paths)))
-
-
-@dataclass
-class Probe:
-    """Ce que ffprobe nous apprend d'un fichier."""
-    duration_min: float | None = None
-    audio_bitrates: dict = field(default_factory=dict)   # {index audio 1-based: kb/s}
+        return dict(zip(paths, pool.map(lire, paths)))
 
 
 # --------------------------------------------------------------------------
@@ -362,8 +416,12 @@ def track_preview_lines(info, opts):
     return lines
 
 
-def verify(info, target, opts):
-    """Compare l'etat actuel du .mkv a l'etat vise. [(label, ok, detail_actuel), ...]"""
+def verify(info, target, opts, tags=None):
+    """Compare l'etat actuel du .mkv a l'etat vise. [(label, ok, detail_actuel), ...]
+
+    `tags` vient de read_tags ; a None, les tags ne sont pas compares - c'est le
+    cas quand on ne les a pas relus.
+    """
     checks = []
     cont = (info or {}).get("container", {}).get("properties", {})
     checks.append(("titre", cont.get("title") == target.title, cont.get("title") or "(absent)"))
@@ -384,12 +442,18 @@ def verify(info, target, opts):
         for sel, tr in subs:
             checks.append((f"st {sel}", current_name(tr) == subtitle_track_name(tr),
                            current_name(tr) or "(vide)"))
+    if tags is not None and target.tags_xml:
+        attendus = parse_tags(target.tags_xml)
+        manquants, en_trop = attendus - tags, tags - attendus
+        detail = (f"{len(manquants)} manquant(s), {len(en_trop)} en trop"
+                  if (manquants or en_trop) else f"{len(tags)} present(s)")
+        checks.append(("tags", not (manquants or en_trop), detail))
     return checks
 
 
-def is_conform(info, target, opts):
+def is_conform(info, target, opts, tags=None):
     """Vrai si le fichier est deja dans l'etat vise (utilise par --skip-done)."""
-    return all(ok for _, ok, _ in verify(info, target, opts))
+    return all(ok for _, ok, _ in verify(info, target, opts, tags))
 
 
 def write(path, info, target, opts, tmdb):
