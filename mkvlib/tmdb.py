@@ -72,8 +72,8 @@ class Tmdb:
             except HTTPError as e:            # sous-classe d'URLError : a rattraper avant
                 if e.code in (401, 403):
                     raise TmdbAuthError(
-                        f"cle TMDB refusee par l'API (HTTP {e.code}). Verifie TMDB_KEY "
-                        "dans .env, ou la variable d'environnement TMDB_API_KEY.") from e
+                        f"cle TMDB refusee par l'API (HTTP {e.code}). "
+                        "Verifie la ligne TMDB_KEY=... de ton fichier .env.") from e
                 if e.code == 404:
                     raise TmdbError("introuvable sur TMDB (HTTP 404)") from e
                 if e.code != 429 and e.code < 500:

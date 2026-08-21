@@ -13,55 +13,69 @@ from mkvlib import cli
 
 
 class TestDotenv(unittest.TestCase):
-    def charger(self, contenu, environ=None):
-        """Ecrit un .env dans un dossier temporaire et le charge depuis ce dossier."""
+    def charger(self, contenu):
+        """Ecrit un .env dans un dossier temporaire et le lit depuis ce dossier."""
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / ".env").write_text(contenu, encoding="utf-8")
             with mock.patch.object(cli.Path, "cwd", staticmethod(lambda: Path(d))), \
-                 mock.patch.dict(os.environ, environ or {}, clear=True), \
                  mock.patch.object(cli, "__file__", str(Path(d) / "cli.py")):
-                cli.load_dotenv()
-                return dict(os.environ)
+                return cli.read_dotenv()
 
     def test_paire_simple(self):
-        self.assertEqual(self.charger("TMDB_KEY=abc123")["TMDB_KEY"], "abc123")
+        self.assertEqual(self.charger("TMDB_KEY=abc123"), {"TMDB_KEY": "abc123"})
 
     def test_commentaires_et_lignes_vides_ignores(self):
         env = self.charger("# commentaire\n\nTMDB_KEY=abc\nligne sans egal\n")
-        self.assertEqual(env["TMDB_KEY"], "abc")
+        self.assertEqual(env, {"TMDB_KEY": "abc"})
 
     def test_guillemets_retires_et_prefixe_export(self):
-        env = self.charger('export TMDB_KEY="abc"\nAUTRE=\'def\'\n')
+        env = self.charger("export TMDB_KEY=\"abc\"\nAUTRE='def'\n")
         self.assertEqual((env["TMDB_KEY"], env["AUTRE"]), ("abc", "def"))
 
-    def test_environnement_existant_prioritaire(self):
-        # Une cle passee en variable d'environnement ne doit pas etre ecrasee par le .env.
-        env = self.charger("TMDB_KEY=du_fichier", {"TMDB_KEY": "de_l_environnement"})
-        self.assertEqual(env["TMDB_KEY"], "de_l_environnement")
+    def test_premiere_ligne_gagne(self):
+        self.assertEqual(self.charger("TMDB_KEY=un\nTMDB_KEY=deux")["TMDB_KEY"], "un")
 
     def test_bom_utf8_tolere(self):
         self.assertEqual(self.charger("﻿TMDB_KEY=abc")["TMDB_KEY"], "abc")
 
+    def test_fichier_absent(self):
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.object(cli.Path, "cwd", staticmethod(lambda: Path(d))), \
+                 mock.patch.object(cli, "__file__", str(Path(d) / "cli.py")):
+                self.assertEqual(cli.read_dotenv("nexiste_pas.env"), {})
+
+    def test_environnement_ni_lu_ni_ecrit(self):
+        # Le .env est la seule source : une variable d'environnement ne le
+        # remplace plus, et la lecture ne laisse rien derriere elle.
+        with mock.patch.dict(os.environ, {"TMDB_KEY": "de_l_environnement"}, clear=True):
+            self.assertEqual(self.charger("TMDB_KEY=du_fichier")["TMDB_KEY"], "du_fichier")
+            self.assertEqual(os.environ["TMDB_KEY"], "de_l_environnement")
+
 
 class TestCleTmdb(unittest.TestCase):
-    def resoudre(self, environ, fallback=""):
-        with mock.patch.dict(os.environ, environ, clear=True), \
-             mock.patch.object(cli, "load_dotenv", lambda *a, **k: None):
-            return cli.resolve_tmdb_key(fallback)
+    def resoudre(self, valeurs):
+        with mock.patch.object(cli, "read_dotenv", lambda *a, **k: valeurs):
+            return cli.resolve_tmdb_key()
 
-    def test_priorite_a_tmdb_api_key(self):
-        self.assertEqual(self.resoudre({"TMDB_API_KEY": "a", "TMDB_KEY": "b"}, "c"), "a")
+    def test_cle_du_fichier(self):
+        self.assertEqual(self.resoudre({"TMDB_KEY": "abc123"}), "abc123")
 
-    def test_repli_sur_tmdb_key(self):
-        self.assertEqual(self.resoudre({"TMDB_KEY": "b"}, "c"), "b")
+    def test_espaces_ignores(self):
+        self.assertEqual(self.resoudre({"TMDB_KEY": "  abc123  "}), "abc123")
 
-    def test_repli_sur_la_constante_du_script(self):
-        self.assertEqual(self.resoudre({}, "c"), "c")
+    def test_fichier_sans_cle(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self.resoudre({"AUTRE": "x"})
+        self.assertIn("TMDB_KEY", str(ctx.exception))
 
-    def test_aucune_cle_arrete_le_script(self):
+    def test_cle_vide(self):
+        with self.assertRaises(SystemExit):
+            self.resoudre({"TMDB_KEY": ""})
+
+    def test_aucun_fichier(self):
         with self.assertRaises(SystemExit) as ctx:
             self.resoudre({})
-        self.assertIn("Aucune cle TMDB", str(ctx.exception))
+        self.assertIn(".env", str(ctx.exception))
 
 
 class TestBanniere(unittest.TestCase):
@@ -71,8 +85,6 @@ class TestBanniere(unittest.TestCase):
         self.assertEqual(cli.mode_label(types.SimpleNamespace(apply=True, verify=True)),
                          "VERIFICATION (aucune ecriture)")
         self.assertIn("SIMULATION", cli.mode_label(types.SimpleNamespace(apply=False, verify=False)))
-
-
 
 
 class TestDossier(unittest.TestCase):
