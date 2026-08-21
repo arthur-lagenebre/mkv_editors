@@ -5,14 +5,16 @@ Rename_Movies.py — Renomme les dossiers (ou fichiers) de films avec les noms T
 Format applique :  "Titre (Annee)"
   - Un prefixe d'ordre de saga est conserve : "1 - Iron Man" -> "1 - Iron Man (2008)".
     C'est lui qui devient le numero dans la collection quand Metadata.py etiquette.
-  - Un sous-dossier par film -> c'est le DOSSIER qui est renomme (son contenu suit).
-    Des .mkv a plat -> ce sont les FICHIERS, avec leurs sous-titres.
+  - Un dossier qui ne contient qu'un film -> c'est le DOSSIER qui est renomme
+    (son contenu suit). Partout ailleurs -> les FICHIERS, avec leurs sous-titres.
+    --dir est parcouru recursivement : un dossier de saga garde son nom, et les
+    films qu'il contient sont renommes un par un.
   - --pin-id ecrit l'identifiant dans le nom ("Dune (2021) [tmdbid-438631]") :
     les passages suivants n'ont plus rien a chercher, donc plus rien a se tromper.
   - N'a besoin d'AUCUN outil externe (ni MKVToolNix ni FFmpeg). Juste Internet.
 
 C'est le pendant de TV_Shows/Rename_Episodes.py, et le meilleur moyen de fiabiliser
-Metadata.py : toute la reconnaissance des films repose sur le nom du dossier.
+Metadata.py : toute la reconnaissance des films repose sur leur nom.
 
 Cle TMDB : ligne TMDB_KEY=... du fichier .env, a la racine du depot.
 
@@ -57,42 +59,46 @@ def wants_pin(rawname, pin_id):
     return pin_id or naming.extract_tmdb_id(rawname)[0] is not None
 
 
-def plan_entry(entry, film, order, foldered, pin_id):
-    """[(source, cible), ...] pour un film : son dossier, ou ses fichiers a plat."""
+def plan_entry(entry, film, order, pin_id):
+    """[(source, cible), ...] pour un film : son dossier, ou son fichier.
+
+    Le dossier n'est renomme que s'il ne contient que ce film : dans un dossier de
+    saga, c'est chaque fichier qui prend le nom TMDB, et le dossier ne bouge pas.
+    """
     stem = target_stem(film, order, wants_pin(entry.rawname, pin_id))
-    if foldered:
+    if entry.owns_folder:
         return [(entry.folder, entry.folder.with_name(stem))]
 
     renames = []
     for video in entry.files:
         renames.append((video, video.with_name(stem + video.suffix.lower())))
-        # A plat, les sous-titres poses a cote doivent suivre leur video.
+        # Les sous-titres poses a cote doivent suivre leur video.
         renames += rename.sidecar_renames(video, stem)
     return renames
 
 
-def plan_library(movies, foldered, args, tmdb):
+def plan_library(movies, args, tmdb):
     """(planned, tally) pour toute la mediatheque, affichage compris."""
     planned, claimed, tally = [], {}, rename.Tally(total=len(movies))
     for entry in movies:
-        print(f"--- {entry.rawname} ---")
-        film, order = lookup.find_movie(tmdb, entry.rawname)
+        print(f"--- {entry.display} ---")
+        film, order = lookup.find_movie(tmdb, entry.rawname, entry.contexts)
         if film is None:
             print()
             continue
 
-        mouvements = [(src, dst) for src, dst in plan_entry(entry, film, order, foldered, args.pin_id)
+        mouvements = [(src, dst) for src, dst in plan_entry(entry, film, order, args.pin_id)
                       if dst != src]
         cible = os.path.normcase(target_stem(film, order, wants_pin(entry.rawname, args.pin_id)))
         if not mouvements:
             # Celui qui porte deja le nom en est le proprietaire, quel que
             # soit l'ordre de parcours : c'est un autre qui devra ceder.
-            claimed[cible] = entry.rawname
+            claimed[cible] = entry.display
             tally.named += 1
             print("  deja au bon nom\n")
             continue
-        jumeau = claimed.setdefault(cible, entry.rawname)
-        if jumeau != entry.rawname:
+        jumeau = claimed.setdefault(cible, entry.display)
+        if jumeau != entry.display:
             print(f"  [DOUBLON] vise le meme nom que '{jumeau}' -> ignore\n")
             continue
         for src, dst in mouvements:
@@ -102,15 +108,14 @@ def plan_library(movies, foldered, args, tmdb):
     return planned, tally
 
 
-def rename_library(movies, foldered, args, tmdb):
+def rename_library(movies, args, tmdb):
     """Affiche le plan et l'applique si --apply. Retourne le Tally."""
-    planned, tally = plan_library(movies, foldered, args, tmdb)
+    planned, tally = plan_library(movies, args, tmdb)
     if args.apply:
         renommes = rename.apply_renames(planned)
-        # Les dossiers (ou les videos) comptent comme des films ; le reste, ce
-        # sont les sous-titres qui les ont suivis.
-        principaux = ({e.folder for e in movies} if foldered
-                      else {f for e in movies for f in e.files})
+        # Le dossier (ou la video) compte comme le film ; le reste, ce sont les
+        # sous-titres qui l'ont suivi.
+        principaux = {e.folder if e.owns_folder else f for e in movies for f in e.files}
         tally.named += len(renommes & principaux)
         tally.subtitles = len(renommes - principaux)
     return tally
@@ -120,7 +125,7 @@ def main():
     ap = argparse.ArgumentParser(
         description="Renomme les dossiers de films au format 'Titre (Annee)' (donnees TMDB).")
     ap.add_argument("--dir", required=True,
-                    help="Dossier de films (un sous-dossier par film, ou des .mkv a plat)")
+                    help="Dossier de films, parcouru recursivement (dossiers de saga compris)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
     ap.add_argument("--apply", action="store_true", help="Renomme reellement (defaut : simulation)")
     ap.add_argument("--pin-id", action="store_true",
@@ -137,15 +142,14 @@ def main():
     mode = cli.mode_label(args, "rien ne sera renomme ; ajoute --apply")
     print(f"=== {mode} ===   source : TMDB {args.language}\n")
 
-    movies, foldered = naming.find_movies(args.dir)
+    movies = naming.find_movies(args.dir)
     if not movies:
         print(f"Aucun .mkv trouve dans : {args.dir}")
         return 0
 
-    quoi = "dossier(s)" if foldered else "fichier(s)"
-    tally = rename_library(movies, foldered, args, tmdb)
+    tally = rename_library(movies, args, tmdb)
     sous_titres = (f", {tally.subtitles} sous-titre(s) renomme(s)") if tally.subtitles else ""
-    print(f"TOTAL : {tally.named}/{tally.total} {quoi} au bon nom{sous_titres}.")
+    print(f"TOTAL : {tally.named}/{tally.total} film(s) au bon nom{sous_titres}.")
     return 0
 
 

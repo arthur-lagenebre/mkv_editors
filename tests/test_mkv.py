@@ -56,6 +56,146 @@ class TestNomsDePistes(unittest.TestCase):
         self.assertEqual(mkv.primary_audio_sel(audios), "a1")
 
 
+class TestDrapeauForceDeduitDuNom(unittest.TestCase):
+    """Quand le nom dit 'force' et que le drapeau manque, on pose le drapeau."""
+
+    opts = mkv.Options(cover=False, date=False, stats=False)
+
+    def subs(self, *pistes):
+        return mkv.track_selectors({"tracks": list(pistes)})[1]
+
+    def test_nom_force_pose_le_drapeau(self):
+        # Regression : la piste devenait "Full" a cote de la piste complete,
+        # elle aussi "Full" - deux noms identiques, l'information perdue.
+        subs = self.subs(piste("subtitles", language="fre", track_name="Français forcé"),
+                         piste("subtitles", language="fre", track_name="Français complet"))
+        self.assertEqual(mkv.forced_from_name(subs), {"s1"})
+        self.assertEqual(mkv.subtitle_track_name(subs[0][1], True), "Forced")
+        self.assertEqual(mkv.subtitle_track_name(subs[1][1], False), "Full")
+
+    def test_rien_si_une_piste_porte_deja_le_drapeau(self):
+        # La ou un forced existe, la situation est declaree : un nom ne la
+        # contredit pas, et un second forced ferait choisir le lecteur au hasard.
+        subs = self.subs(piste("subtitles", language="fre", forced_track=True,
+                               track_name="forced colored"),
+                         piste("subtitles", language="fre", track_name="Français forcé"))
+        self.assertEqual(mkv.forced_from_name(subs), set())
+
+    def test_une_seule_piste_par_langue(self):
+        subs = self.subs(piste("subtitles", language="fre", track_name="Français forcé"),
+                         piste("subtitles", language="fre", track_name="forcé colored"))
+        self.assertEqual(mkv.forced_from_name(subs), {"s1"})
+
+    def test_mais_une_par_langue_quand_il_y_en_a_plusieurs(self):
+        subs = self.subs(piste("subtitles", language="fre", track_name="Français forcé"),
+                         piste("subtitles", language="eng", track_name="English forced"))
+        self.assertEqual(mkv.forced_from_name(subs), {"s1", "s2"})
+
+    def test_nom_muet_ne_force_rien(self):
+        subs = self.subs(piste("subtitles", language="fre", track_name="Français complet"),
+                         piste("subtitles", language="eng", track_name="English full SDH"))
+        self.assertEqual(mkv.forced_from_name(subs), set())
+
+    def test_no_flags_s_abstient(self):
+        subs = self.subs(piste("subtitles", language="fre", track_name="Français forcé"))
+        sans = mkv.Options(cover=False, date=False, stats=False, flags=False)
+        self.assertEqual([f for _, _, f in mkv.subtitle_targets(subs, sans)], [False])
+        self.assertEqual([f for _, _, f in mkv.subtitle_targets(subs, self.opts)], [True])
+
+    def test_verify_reclame_le_drapeau(self):
+        # Sans cet ecart, --skip-done sauterait le fichier a corriger.
+        info = {"container": {"properties": {"title": "X"}},
+                "tracks": [piste("subtitles", language="fre", track_name="Français forcé")]}
+        diffs = [lbl for lbl, ok, _ in mkv.verify(info, mkv.Target(title="X"), self.opts)
+                 if not ok]
+        self.assertIn("st s1 forced", diffs)
+
+    def test_ecriture_pose_le_drapeau_et_le_nom(self):
+        vu = {}
+
+        def run(cmd, **kwargs):
+            vu["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        info = {"tracks": [piste("subtitles", language="fre", track_name="Français forcé")]}
+        with mock.patch.object(mkv.subprocess, "run", run):
+            code, _ = mkv.write("film.mkv", info, mkv.Target(title="X", tags_xml="<Tags/>"),
+                                self.opts, None)
+        self.assertEqual(code, 0)
+        self.assertIn("flag-forced=1", vu["cmd"])
+        self.assertIn("name=Forced", vu["cmd"])
+
+    def test_second_passage_ne_change_plus_rien(self):
+        # Idempotence : le drapeau pose, le nom en decoule de lui-meme.
+        info = {"container": {"properties": {"title": "X"}},
+                "tracks": [piste("subtitles", language="fre", forced_track=True,
+                                 track_name="Forced")]}
+        self.assertTrue(mkv.is_conform(info, mkv.Target(title="X"), self.opts))
+
+class TestPistesAmbigues(unittest.TestCase):
+    """Ce qui fait rendre la main : une information que le renommage effacerait."""
+
+    opts = mkv.Options(cover=False, date=False, stats=False)
+
+    def conflits(self, *pistes, opts=None):
+        return mkv.track_conflicts({"tracks": list(pistes)}, opts or self.opts)
+
+    def test_forced_non_transposable_et_noms_en_double(self):
+        # L etat exact d Aquaman : une piste forcee declaree, une deuxieme qui
+        # ne l est que par son nom, et la complete. Les deux dernieres
+        # deviendraient "Full" toutes les deux.
+        raisons = self.conflits(
+            piste("subtitles", language="fre", forced_track=True, track_name="forced colored"),
+            piste("subtitles", language="fre", track_name="Français forcé"),
+            piste("subtitles", language="fre", track_name="Français complet"))
+        self.assertEqual(len(raisons), 2)
+        self.assertIn("st s2 : le nom dit", raisons[0])
+        self.assertIn("st s1 porte deja le drapeau", raisons[0])
+        self.assertIn("st s2 et st s3 [fr]", raisons[1])
+        self.assertIn("Full", raisons[1])
+
+    def test_deux_sous_titres_indistinguables(self):
+        # L etat exact de Catwoman : deux pistes anglaises que rien ne separe.
+        raisons = self.conflits(piste("subtitles", language="eng", track_name="English"),
+                                piste("subtitles", language="eng", track_name="English"))
+        self.assertEqual(len(raisons), 1)
+        self.assertIn("st s1 et st s2 [en]", raisons[0])
+
+    def test_deux_audio_de_meme_langue_et_meme_qualite(self):
+        raisons = self.conflits(
+            piste("audio", language="fre", codec="AC-3", audio_channels=6),
+            piste("audio", language="fre", codec="AC-3", audio_channels=6))
+        self.assertIn("audio a1 et audio a2 [fr]", raisons[0])
+
+    def test_langues_differentes_ne_se_marchent_pas_dessus(self):
+        self.assertEqual(self.conflits(
+            piste("audio", language="fre", codec="AC-3", audio_channels=6),
+            piste("audio", language="eng", codec="AC-3", audio_channels=6),
+            piste("subtitles", language="fre", track_name="Français complet"),
+            piste("subtitles", language="eng", track_name="English full")), [])
+
+    def test_fichier_sain(self):
+        # Le cas courant : un force sans drapeau (qu on posera) et une complete.
+        self.assertEqual(self.conflits(
+            piste("subtitles", language="fre", track_name="Français forcé"),
+            piste("subtitles", language="fre", track_name="Français complet")), [])
+
+    def test_no_flags_rend_le_nom_force_intransposable(self):
+        sans = mkv.Options(cover=False, date=False, stats=False, flags=False)
+        raisons = self.conflits(piste("subtitles", language="fre",
+                                      track_name="Français forcé"), opts=sans)
+        self.assertIn("--no-flags", raisons[0])
+
+    def test_sans_renommage_rien_a_signaler(self):
+        muet = mkv.Options(cover=False, date=False, stats=False,
+                           audio_names=False, sub_names=False)
+        self.assertEqual(self.conflits(
+            piste("subtitles", language="eng", track_name="English"),
+            piste("subtitles", language="eng", track_name="English"), opts=muet), [])
+
+    def test_fichier_illisible(self):
+        self.assertEqual(mkv.track_conflicts(None, self.opts), [])
+
 class TestTagsXML(unittest.TestCase):
     def test_document_bien_forme_et_echappe(self):
         xml = mkv.tags_document([mkv.tag_block(50, [mkv.simple("TITLE", "Rock & <Roll>")])])

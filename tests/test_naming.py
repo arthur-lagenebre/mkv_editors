@@ -10,6 +10,10 @@ from mkvlib import naming
 
 
 class TestTitreAnnee(unittest.TestCase):
+    def test_demi_numero_d_ordre(self):
+        # Les films intercalaires : "1.5 - Dark Fury" etait cherche "1 5 - Dark Fury".
+        self.assertEqual(naming.parse_title_year("1.5 - Dark Fury"),
+                         ("Dark Fury", None, "1.5"))
     def test_annee_entre_parentheses(self):
         self.assertEqual(naming.parse_title_year("Inception (2010)"), ("Inception", "2010", None))
 
@@ -195,30 +199,116 @@ class TestDetectionDesFilms(unittest.TestCase):
                 fichier.write_text("x" * taille, encoding="utf-8")
             return naming.find_movies(racine)
 
+    def noms(self, movies):
+        return [m.rawname for m in movies]
+
     def test_detection_par_dossier(self):
-        movies, foldered = self.detecter({"Inception (2010)/bande-annonce.mkv": 10,
-                                          "Inception (2010)/film.mkv": 500})
-        self.assertTrue(foldered)
+        movies = self.detecter({"Inception (2010)/bande-annonce.mkv": 10,
+                                "Inception (2010)/film.mkv": 500})
         self.assertEqual(len(movies), 1)
         self.assertEqual([f.name for f in movies[0].files], ["film.mkv"])   # le petit est ecarte
         self.assertEqual(movies[0].rawname, "Inception (2010)")             # nom = le dossier
+        self.assertTrue(movies[0].owns_folder)
 
     def test_film_en_deux_fichiers(self):
         # Regression : seul le plus gros etait etiquete, l'autre restait nu.
-        movies, _ = self.detecter({"Heat (1995)/CD1.mkv": 500,
-                                   "Heat (1995)/CD2.mkv": 460,
-                                   "Heat (1995)/making-of.mkv": 40})
+        movies = self.detecter({"Heat (1995)/CD1.mkv": 500,
+                                "Heat (1995)/CD2.mkv": 460,
+                                "Heat (1995)/making-of.mkv": 40})
+        self.assertEqual(len(movies), 1)
         self.assertEqual([f.name for f in movies[0].files], ["CD1.mkv", "CD2.mkv"])
 
     def test_detection_a_plat(self):
-        movies, foldered = self.detecter({"Heat (1995).mkv": 1})
-        self.assertFalse(foldered)
-        self.assertEqual([m.rawname for m in movies], ["Heat (1995)"])
+        movies = self.detecter({"Heat (1995).mkv": 1})
+        self.assertEqual(self.noms(movies), ["Heat (1995)"])
         self.assertEqual(len(movies[0].files), 1)
+        self.assertFalse(movies[0].owns_folder)      # --dir nomme la mediatheque, pas le film
 
     def test_dossier_sans_video(self):
-        movies, foldered = self.detecter({"Notes/lisezmoi.txt": 5})
-        self.assertEqual((movies, foldered), ([], False))
+        self.assertEqual(self.detecter({"Notes/lisezmoi.txt": 5}), [])
+
+    def test_les_films_a_plat_survivent_aux_dossiers(self):
+        # Regression : un seul sous-dossier suffisait a faire disparaitre, sans un
+        # mot, tous les .mkv poses a la racine.
+        movies = self.detecter({"Catwoman.mkv": 100,
+                                "Superman (2025).mkv": 100,
+                                "Joker/1 - Joker.mkv": 100,
+                                "Joker/2 - Folie a deux.mkv": 100})
+        self.assertEqual(self.noms(movies),
+                         ["Catwoman", "Superman (2025)", "1 - Joker", "2 - Folie a deux"])
+
+    def test_dossier_de_saga_un_film_par_fichier(self):
+        # Regression : les deux fichiers passaient pour un seul film en deux parts,
+        # et 'Folie a deux' recevait les metadonnees de 'Joker'.
+        movies = self.detecter({"Joker/1 - Joker.mkv": 500,
+                                "Joker/2 - Folie a deux.mkv": 480})
+        self.assertEqual(self.noms(movies), ["1 - Joker", "2 - Folie a deux"])
+        self.assertEqual([m.contexts for m in movies], [["Joker"], ["Joker"]])
+        self.assertFalse(any(m.owns_folder for m in movies))
+
+    def test_petit_film_a_cote_d_un_remux(self):
+        # Regression : 1 Go a cote de 28 Go, c'est un dessin anime a cote d'un
+        # remux - pas une bande-annonce. Le poids ne decide plus de rien.
+        movies = self.detecter({"Catwoman.mkv": 11, "Constantine.mkv": 280})
+        self.assertEqual(self.noms(movies), ["Catwoman", "Constantine"])
+
+    def test_saga_aux_films_de_tailles_tres_inegales(self):
+        # Un film deux fois plus leger que le plus gros de la saga reste un film.
+        movies = self.detecter({"DCEU/01 - Man of Steel.mkv": 200,
+                                "DCEU/05 - Justice League.mkv": 490,
+                                "DCEU/09 - Wonder Woman 1984.mkv": 280})
+        self.assertEqual(len(movies), 3)
+
+    def test_descente_sans_limite_de_profondeur(self):
+        movies = self.detecter({"Batman/Nolan Trilogy/1 - Batman Begins (2005)/film.mkv": 100})
+        self.assertEqual(self.noms(movies), ["1 - Batman Begins (2005)"])
+        self.assertTrue(movies[0].owns_folder)
+
+    def test_un_dossier_qui_range_ne_prete_pas_son_nom(self):
+        # 'Batman' contient un film ET des sous-dossiers : c'est du rangement, pas
+        # un film. Le fichier repond de lui-meme, le dossier reste en renfort.
+        movies = self.detecter({"Batman/The Batman.mkv": 100,
+                                "Batman/Nolan Trilogy/1 - Batman Begins.mkv": 100,
+                                "Batman/Nolan Trilogy/2 - The Dark Knight.mkv": 100})
+        self.assertEqual(self.noms(movies),
+                         ["The Batman", "1 - Batman Begins", "2 - The Dark Knight"])
+        # Le grand-parent suit le parent : "Nolan Trilogy" ne dit rien a TMDB,
+        # "Batman" si.
+        self.assertEqual([m.contexts for m in movies],
+                         [["Batman"], ["Nolan Trilogy", "Batman"],
+                          ["Nolan Trilogy", "Batman"]])
+        self.assertFalse(any(m.owns_folder for m in movies))
+
+    def test_dossiers_parents_du_plus_proche_au_plus_lointain(self):
+        movies = self.detecter({"Resident Evil/Animation/3 - Vendetta.mkv": 100,
+                                "Resident Evil/Animation/4 - Death Island.mkv": 100,
+                                "Resident Evil/2 - Apocalypse.mkv": 100,
+                                "Seul.mkv": 100})
+        contextes = {m.rawname: m.contexts for m in movies}
+        self.assertEqual(contextes["Seul"], [])                  # --dir ne compte pas
+        self.assertEqual(contextes["2 - Apocalypse"], ["Resident Evil"])
+        self.assertEqual(contextes["3 - Vendetta"], ["Animation", "Resident Evil"])
+    def test_dossiers_de_bonus_ecartes(self):
+        movies = self.detecter({"Dune (2021)/film.mkv": 500,
+                                "Dune (2021)/Extras/featurette.mkv": 400})
+        self.assertEqual(self.noms(movies), ["Dune (2021)"])
+
+    def test_bonus_seul_dans_son_dossier_reste_un_film(self):
+        # Un titre a le droit de contenir 'Bonus' : ecarter le seul .mkv du dossier
+        # le ferait disparaitre en silence.
+        movies = self.detecter({"Bonus (2019)/Bonus.mkv": 100})
+        self.assertEqual(self.noms(movies), ["Bonus (2019)"])
+
+    def test_marqueur_de_part_retire_du_nom_cherche(self):
+        movies = self.detecter({"Saga/Heat CD1.mkv": 500,
+                                "Saga/Heat CD2.mkv": 480,
+                                "Saga/Collateral.mkv": 490})
+        self.assertEqual(self.noms(movies), ["Collateral", "Heat"])
+
+    def test_chemin_affiche(self):
+        movies = self.detecter({"DCEU/01 - Man of Steel.mkv": 100,
+                                "DCEU/06 - Aquaman.mkv": 100})
+        self.assertEqual(movies[0].display, str(Path("DCEU/01 - Man of Steel")))
 
 
 if __name__ == "__main__":

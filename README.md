@@ -51,11 +51,37 @@ passé. `--verify` (les deux `Metadata.py`) compare l'état des fichiers à TMDB
 
 ### Films
 
-Un sous-dossier par film, ou des `.mkv` à plat. Le titre et l'année sont lus dans le nom —
-`Inception (2010)`. Un film coupé en plusieurs fichiers (`CD1`/`CD2`) est étiqueté en entier :
-tout `.mkv` pesant au moins la moitié du plus gros du dossier est traité, ce qui laisse de côté
-bandes-annonces et making-of. Un préfixe d'ordre de saga (`1 - Iron Man`) est reconnu et inscrit comme
-numéro dans la collection.
+`--dir` est parcouru **récursivement**, aussi profond qu'il y a des dossiers : films à plat,
+dossiers de saga (`DCEU/01 - Man of Steel.mkv`) et étages intermédiaires (`Batman/Nolan
+Trilogy/…`) cohabitent. Un **dossier n'est jamais un film** : il ne compte ni ne se traite, il
+range. Il prête seulement son nom au film qu'il contient quand il n'en contient qu'un — c'est
+là que vit le titre dans `Inception (2010)/film.mkv`. Partout ailleurs c'est le nom du
+**fichier** qui parle, et les dossiers au-dessus viennent en **renfort** — du plus proche au plus
+lointain : `Resident Evil/Animation/3 - Vendetta.mkv` cherche `Vendetta` (qui donne *V pour
+Vendetta*…), puis `Resident Evil Vendetta`. Le renfort ne l'emporte que si le titre trouvé
+contient à la fois le dossier et ce qu'on cherchait. À titre égal, TMDB classant par popularité,
+une fiche portant **exactement** le titre cherché passe devant (`Blade` doit rendre *Blade*, pas
+*Blade II*).
+
+Un sous-titre dont le **nom** dit « forcé » alors que le drapeau manque se voit poser le
+drapeau — sinon le renommer d'après ses drapeaux effacerait l'information. Et quand une piste
+reste **ambiguë** (un « forcé » non transposable parce qu'une autre piste porte déjà le drapeau,
+ou deux pistes de même langue qui porteraient le même nom), le film n'est **pas traité du tout** :
+rien n'est modifié, la raison s'affiche sous `[NON TRAITE]`, et le bilan les compte.
+
+Quand plusieurs fiches TMDB écrivent le **même titre autrement** (« Les Quatre Fantastiques »
+et « Les 4 Fantastiques »), le film est mis de côté et la question est posée **à la fin du
+passage**, dans le terminal : candidats numérotés, `Entrée` garde le premier, `i` laisse le film
+de côté, `q` arrête les questions. Une suite (« Iron Man 2 ») n'est pas une variante et ne
+demande rien. Hors terminal (sortie redirigée, CI) les films restent de côté au lieu de bloquer ;
+`--no-ask` reprend l'ancien comportement.
+
+Le titre et l'année sont lus dans le nom — `Inception (2010)`. Un film coupé en plusieurs
+fichiers (`CD1`/`CD2`) est étiqueté en entier. Bandes-annonces, making-of et dossiers de bonus
+(`Extras`, `Featurettes`…) sont reconnus à leur **nom** : le poids ne décide de rien, un dessin
+animé de 1 Go est un film autant qu'un remux de 28 Go. Un préfixe d'ordre de saga
+(`1 - Iron Man`, demi-numéros compris : `1.5 - Dark Fury`) est reconnu et inscrit comme numéro dans
+la collection.
 
 ```powershell
 python Movies\Metadata.py --dir "D:\Films"                    # simulation
@@ -64,7 +90,7 @@ python Movies\Metadata.py --dir "D:\Films\Dune (2021)" --tmdb-id 438631 --apply 
 python Movies\Metadata.py --dir "D:\Films" --no-tag --recap --apply   # fiche seule
 ```
 
-Comme toute la reconnaissance repose sur le nom du dossier,
+Comme toute la reconnaissance repose sur les noms,
 [Rename_Movies.py](Movies/Rename_Movies.py) le remet d'aplomb depuis TMDB — et `--pin-id` y
 écrit l'identifiant, après quoi plus rien n'est cherché ni ne peut se tromper :
 

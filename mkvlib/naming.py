@@ -6,7 +6,7 @@ depot la plus facile a casser silencieusement, et donc celle qui est testee.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -51,50 +51,160 @@ def find_seasons(root):
 # --------------------------------------------------------------------------
 # Films sur le disque
 # --------------------------------------------------------------------------
-# Part d'un film decoupe en plusieurs fichiers : un CD2 pese a peu pres autant
-# que le CD1, alors qu'une bande-annonce ou un making-of est bien plus leger.
-PART_RATIO = 0.5
+# Un bonus se reconnait a son NOM, jamais a son poids : dans une vraie
+# mediatheque, un film d'animation de 1 Go voisine avec un remux de 28 Go, et
+# tout seuil relatif finit par jeter des films (c'est ce qui a fait disparaitre
+# 'Catwoman' d'un dossier ou trainait 'Constantine' en remux).
+
+# Dossiers qui n'ont jamais de film a etiqueter : bonus des editions, dossiers
+# techniques des NAS. Descendre dedans reviendrait a etiqueter des featurettes.
+SKIP_DIR_RE = re.compile(
+    r"^(?:extras?|bonus|suppl[eé]ments?|featurettes?|behind[\s._-]*the[\s._-]*scenes|"
+    r"making[\s._-]*of|trailers?|bandes?[\s._-]*annonces?|samples?|@eadir)$", re.IGNORECASE)
+
+# Noms de bonus poses a cote du film, dans le meme dossier.
+EXTRA_NAME_RE = re.compile(
+    r"\b(?:bande[\s._-]*annonce|trailer|teaser|making[\s._-]*of|featurette|sample|"
+    r"bonus|interview|sc[eè]nes?[\s._-]*coup[eé]es?|deleted[\s._-]*scenes)\b",
+    re.IGNORECASE)
+
+# Marqueur de part d'un film coupe en plusieurs fichiers : CD1, Disc 2, Partie 3.
+PART_MARK_RE = re.compile(r"\b(?:cd|dvd|disc|disque|part|partie|pt)[\s._-]*\d{1,2}\b",
+                          re.IGNORECASE)
 
 
 @dataclass
 class MovieFolder:
-    """Un film sur le disque : son dossier, ses fichiers video, le nom a interpreter."""
+    """Un film sur le disque : ses fichiers video, et le nom a interpreter.
+
+    `rawname` est le nom du DOSSIER quand celui-ci ne contient que ce film - c'est
+    la que vit le titre dans "Inception (2010)/film.mkv" - et le nom du FICHIER
+    partout ailleurs. Dans ce second cas, `contexts` liste les dossiers au-dessus
+    du film, du plus proche au plus lointain : ils servent de renfort a la
+    recherche TMDB ("Resident Evil" pour "Animation/3 - Vendetta").
+    """
     folder: Path
     files: list
     rawname: str
+    contexts: list = field(default_factory=list)
+    owns_folder: bool = False
+    display: str = ""
+
+    def __post_init__(self):
+        self.display = self.display or self.rawname
 
 
-def movie_parts(mkvs):
-    """Les .mkv qui composent le film, du plus gros au plus petit.
+def without_part_mark(stem):
+    """'Heat CD2' -> 'Heat'. Chaine vide si le nom n'etait QUE ca ('CD1')."""
+    return " ".join(PART_MARK_RE.sub(" ", stem).split()).strip(" -_.")
 
-    Un film peut etre coupe en deux fichiers (CD1/CD2) : n'en etiqueter qu'un
-    laissait l'autre sans metadonnees, sans un mot. On garde donc tout ce qui
-    pese au moins la moitie du plus gros, ce qui ecarte les bandes-annonces et
-    autres bonus poses dans le meme dossier.
+
+def strip_part_mark(stem):
+    """Nom a chercher pour un fichier : sans son marqueur de part, s'il en reste."""
+    return without_part_mark(stem) or stem
+
+
+def part_key(path):
+    """Cle de regroupement d'un fichier : son nom sans marqueur de part.
+
+    'Heat CD1' et 'Heat CD2' la partagent - c'est un seul film en deux morceaux -
+    et 'CD1'/'CD2' aussi, vide. '1 - Joker' et '2 - Folie a deux' ne la partagent
+    pas : ce sont deux films, et un ordre de saga n'est pas un marqueur de part.
     """
-    tailles = sorted(((f.stat().st_size, f) for f in mkvs), reverse=True,
-                     key=lambda couple: couple[0])
+    return without_part_mark(path.stem).lower()
+
+
+def is_extra(path, size, reference):
+    """Ce fichier est-il un bonus pose a cote du film ?
+
+    Son nom doit le dire, et il ne doit pas etre le plus gros de son dossier :
+    un titre a le droit de contenir 'Trailer' ou 'Bonus', et s'il n'y a pas de
+    film a cote, c'est lui le film. Un .mkv qui ne dit rien reste un film : mal
+    associe, il se signale ; ecarte, il disparait sans un mot.
+    """
+    return size < reference and bool(EXTRA_NAME_RE.search(path.stem))
+
+
+def movie_groups(mkvs):
+    """[[fichiers d'un film], ...] pour les .mkv d'UN dossier, bonus ecartes.
+
+    Deux pieges opposes se referment ici. Etiqueter un CD2 comme un film a part :
+    il n'a pas de titre, la recherche part a l'aveugle. Et etiqueter deux films
+    d'une saga comme les deux parts d'un seul : ils recoivent alors les MEMES
+    metadonnees, ce qui a longtemps ecrit 'Joker' sur 'Folie a deux'.
+    """
+    tailles = {}
+    for f in mkvs:
+        try:
+            tailles[f] = f.stat().st_size
+        except OSError:                       # fichier disparu ou partage coupe
+            tailles[f] = 0
     if not tailles:
         return []
-    reference = tailles[0][0]
-    return [f for taille, f in tailles if taille >= reference * PART_RATIO]
+    reference = max(tailles.values())
+    groupes = {}
+    for f in sorted(tailles):
+        if is_extra(f, tailles[f], reference):
+            continue
+        groupes.setdefault(part_key(f), []).append(f)
+    return list(groupes.values())
+
+
+def subdirs(folder):
+    """Sous-dossiers a explorer, tries : ni bonus, ni dossiers caches."""
+    try:
+        subs = sorted(p for p in folder.iterdir() if p.is_dir())
+    except OSError:
+        return []
+    return [p for p in subs
+            if not p.name.startswith(".") and not SKIP_DIR_RE.match(p.name)]
+
+
+def _movie_entry(folder, root, files, owns):
+    """Construit le MovieFolder d'un groupe de fichiers deja constitue."""
+    rawname = folder.name if owns else strip_part_mark(files[0].stem)
+    try:
+        rel = folder.relative_to(root)
+    except ValueError:                        # ne devrait pas arriver : par securite
+        rel = Path(folder.name)
+    # Les dossiers au-dessus du film, du plus proche au plus lointain. Celui qui
+    # prete deja son nom au film n'apprendrait rien de plus, et --dir lui-meme
+    # porte le nom de la mediatheque, pas d'une saga : ni l'un ni l'autre n'y est.
+    parents = list(rel.parts)[:-1] if owns else list(rel.parts)
+    return MovieFolder(folder=folder, files=files, rawname=rawname,
+                       contexts=list(reversed(parents)),
+                       owns_folder=owns,
+                       display=str(rel if owns else rel / rawname))
+
+
+def _scan(folder, root):
+    """Films de `folder` puis de tout ce qu'il contient, en profondeur."""
+    nested = []
+    for sub in subdirs(folder):
+        nested += _scan(sub, root)
+    groupes = movie_groups(files_with_ext(folder, {".mkv"}))
+    # Un dossier ne parle pour un film que s'il n'en contient qu'un ET ne cache
+    # rien en dessous : sinon c'est un dossier de saga ou de rangement, et chaque
+    # fichier repond de lui-meme. --dir lui-meme ne parle jamais : il porte le nom
+    # de la mediatheque ("_DC"), pas celui d'un film.
+    owns = len(groupes) == 1 and not nested and folder != root
+    return [_movie_entry(folder, root, files, owns) for files in groupes] + nested
 
 
 def find_movies(root):
-    """(films, foldered). films = [MovieFolder, ...].
-    - Sous-dossiers contenant des .mkv -> un film par dossier (nom = dossier).
-    - Sinon, chaque .mkv de --dir -> un film (nom = fichier)."""
+    """[MovieFolder, ...] : tous les films sous `root`, sous-dossiers compris.
+
+    La descente est recursive et sans limite de profondeur : une mediatheque se
+    range par saga ("_DC/DCEU/01 - Man of Steel.mkv"), parfois sur deux etages
+    ("_DC/Batman/Nolan Trilogy/..."), et les films a plat cotoient les dossiers.
+
+    Un DOSSIER n'est jamais un film : il ne compte pas et ne se traite pas. Il
+    prete seulement son nom au film qu'il contient, quand il n'en contient qu'un.
+    """
     root = Path(root)
     if not root.is_dir():
-        return [], False
-    foldered = []
-    for sub in sorted(p for p in root.iterdir() if p.is_dir()):
-        parts = movie_parts(sub.glob("*.mkv"))
-        if parts:
-            foldered.append(MovieFolder(sub, parts, sub.name))
-    if foldered:
-        return foldered, True
-    return [MovieFolder(root, [f], f.stem) for f in sorted(root.glob("*.mkv"))], False
+        return []
+    return _scan(root, root)
 
 
 # --------------------------------------------------------------------------
@@ -143,7 +253,8 @@ def best_title_match(filename, episodes):
 # --------------------------------------------------------------------------
 # Titre et annee d'un film
 # --------------------------------------------------------------------------
-ORDER_RE = re.compile(r"^\s*(\d{1,3})\s*[-–—]\s+")   # "1 - ", "01 - " (tiret obligatoire)
+# "1 - ", "01 - ", et le demi-numero des films intercalaires ("1.5 - Dark Fury").
+ORDER_RE = re.compile(r"^\s*(\d{1,3}(?:\.\d{1,2})?)\s*[-–—]\s+")   # tiret obligatoire
 
 # Tokens de "release" a retirer du nom avant la recherche.
 QUALITY_RE = re.compile(
@@ -163,7 +274,8 @@ def max_plausible_year():
 def parse_title_year(name):
     """'Inception (2010)' -> ('Inception', '2010', None). Annee entre () prioritaire.
 
-    Un prefixe d'ordre de saga '{n} - ' est detecte et retire ('1 - Iron Man' -> ordre 1).
+    Un prefixe d'ordre de saga '{n} - ' est detecte et retire ('1 - Iron Man' -> ordre 1),
+    demi-numeros compris : '1.5 - Dark Fury' rend l'ordre '1.5', un film intercalaire.
 
     Une annee "nue" (sans parentheses) n'est retenue que si elle est plausible :
     sinon 'Blade Runner 2049' serait cherche comme 'Blade Runner' sorti en 2049.
@@ -173,7 +285,8 @@ def parse_title_year(name):
     order = None
     mo = ORDER_RE.match(name)
     if mo:                                 # prefixe d'ordre "{n} - " -> retire du titre
-        order = int(mo.group(1))
+        brut = mo.group(1)                 # "1.5" reste tel quel : ce n'est pas un entier
+        order = int(brut) if brut.isdigit() else brut
         name = name[mo.end():]
     mb = re.search(r"[\(\[]\s*((?:19|20)\d{2})\s*[\)\]]", name)
     if mb:                                 # annee entre parentheses/crochets = la bonne

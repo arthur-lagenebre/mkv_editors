@@ -10,6 +10,9 @@ Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux, c'est quasi insta
   - le nom des pistes AUDIO       -> codec + canaux + debit (ex. "E-AC-3 5.1 640 kb/s")
   - le nom des pistes SOUS-TITRES -> uniquement les drapeaux actifs (Forced, SDH...), ou "Full"
   - les DRAPEAUX 'par defaut'     -> une seule piste audio par defaut (la FR), aucun sous-titre
+  - le drapeau FORCED             -> pose sur un sous-titre dont le NOM dit "force" alors que le
+    drapeau manque (sinon, le renommer d'apres ses drapeaux effacerait l'information). Une seule
+    piste par langue, et rien si le fichier declare deja un sous-titre force.  [--no-flags]
 
 => Fichier 100% autonome : toutes les metadonnees voyagent avec le .mkv.
 
