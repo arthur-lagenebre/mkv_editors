@@ -63,16 +63,13 @@ Options principales :
 """
 
 import argparse
-import base64
-import re
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
-from mkvlib import artwork, cli, lookup, mkv, naming              # noqa: E402
+from mkvlib import artwork, cli, embed, lookup, mkv, naming       # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 
 # ============================================================================
@@ -222,75 +219,15 @@ def process_season(mkv_dir, season, args, opts, tmdb):
 # ----------------------------------------------------------------------------
 # 3. Fiche recap HTML : vignettes encodees dans la page
 # ----------------------------------------------------------------------------
-# Les vignettes du recap sont encodees en base64 DANS le HTML : la fiche est un
-# fichier unique, deplacable et partageable tel quel, sans dossier d'images a cote.
-STILL_MIME = "image/jpeg"
-# Cle de cache d'une vignette = taille TMDB + chemin TMDB (ex. "w300/aBc123.jpg").
-# Le chemin TMDB change des que l'image change, donc l'invalidation est automatique.
-STILL_KEY_RE = re.compile(r"^[\w./-]+$")
-# Retrouve les vignettes deja encodees dans un recap.html precedent.
-EMBEDDED_RE = re.compile(r"<img data-still='([^']+)' src='(data:[^']+)'")
-
-
-def still_key(still_path, size):
-    key = f"{size}{still_path}"
-    return key if STILL_KEY_RE.match(key) else None
-
-
-def read_embedded_stills(recap_path):
-    """Relit les vignettes encodees dans un recap.html existant.
-
-    C'est le cache : regenerer la fiche ne retelecharge que les vignettes nouvelles
-    ou modifiees, sans qu'aucun fichier annexe n'ait a etre conserve sur le disque."""
-    try:
-        html = Path(recap_path).read_text(encoding="utf-8")
-    except OSError:
-        return {}
-    return dict(EMBEDDED_RE.findall(html))
-
-
 def collect_stills(runs, size):
     """Retourne {cle: chemin TMDB} pour toutes les vignettes d'episode disponibles."""
     needed = {}
     for run in runs:
         for ep in run.episodes:
-            still = ep.get("still_path")
-            key = still_key(still, size) if still else None
+            key = embed.image_key(ep.get("still_path"), size)
             if key:
-                needed[key] = still
+                needed[key] = ep["still_path"]
     return needed
-
-
-def fetch_stills(needed, cached, size, tmdb, workers=8):
-    """Resout {cle: chemin TMDB} en {cle: data-URI}.
-
-    Reprend ce que le recap existant contenait deja et telecharge le reste en
-    parallele (une serie longue = des centaines de vignettes : en sequentiel, chaque
-    image paie son propre aller-retour TLS)."""
-    stills = {k: cached[k] for k in needed if k in cached}
-    todo = sorted((k, p) for k, p in needed.items() if k not in stills)
-    if not todo:
-        if stills:
-            print(f"  [recap] {len(stills)} vignette(s) reprise(s) de la fiche existante")
-        return stills
-
-    print(f"  [recap] {len(todo)} vignette(s) a telecharger"
-          + (f", {len(stills)} reprise(s) de la fiche existante" if stills else ""))
-
-    def grab(item):
-        key, path = item
-        try:
-            raw = tmdb.image(path, size)
-        except TmdbError as e:
-            print(f"      vignette ignoree ({path}) : {e}")
-            return key, None
-        return key, f"data:{STILL_MIME};base64," + base64.b64encode(raw).decode("ascii")
-
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for key, uri in pool.map(grab, todo):
-            if uri:
-                stills[key] = uri
-    return stills
 
 
 def build_recap_html(series_name, show, runs, tmdb_id, stills, size):
@@ -316,11 +253,9 @@ def build_recap_html(series_name, show, runs, tmdb_id, stills, size):
                     f"data-s='{run.number}'>{esc(label)}{compteur}</button>")
         cards = []
         for ep in episodes:
-            still = ep.get("still_path")
-            key = still_key(still, size) if still else None
+            key = embed.image_key(ep.get("still_path"), size)
             uri = stills.get(key) if key else None
-            img = (f"<img data-still='{key}' src='{uri}' alt='' decoding='async' loading='lazy'>"
-                   if uri else "<div class='noimg'></div>")
+            img = embed.tag(key, uri) if uri else "<div class='noimg'></div>"
 
             absent = marque and ep.get("episode_number") not in run.owned
             manque = "<span class='miss'>manquant</span>" if absent else ""
@@ -409,8 +344,8 @@ def generate_sidecars(root_dir, series_name, show, processed, args, tmdb):
         out = Path(root_dir) / "recap.html"
         needed = collect_stills(processed, args.still_size)
         # En simulation on ne telecharge rien : la page est rendue sans vignette.
-        stills = (fetch_stills(needed, read_embedded_stills(out), args.still_size, tmdb)
-                  if apply else {})
+        stills = (embed.fetch(needed, embed.read_embedded(out), args.still_size,
+                              tmdb, label="vignette") if apply else {})
         html = build_recap_html(series_name, show, processed, args.tmdb_id, stills, args.still_size)
         print(f"  [serie] {_write_text(out, html, apply)}"
               + (f"  ({len(html) / 1_048_576:.1f} Mo, {len(stills)} vignette(s) integree(s))"

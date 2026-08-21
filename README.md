@@ -6,7 +6,7 @@ remux, c'est quasi instantané), pour que chaque fichier reste autonome.
 
 | Script | Rôle |
 |---|---|
-| [Movies/Metadata.py](Movies/Metadata.py) | Étiquette des films : titre, date de sortie **française**, synopsis, casting, genres, jaquette, noms de pistes |
+| [Movies/Metadata.py](Movies/Metadata.py) | Étiquette des films : titre, date de sortie **française**, synopsis, casting, genres, jaquette, noms de pistes ; fiche récap de la médiathèque |
 | [TV_Shows/Metadata.py](TV_Shows/Metadata.py) | Idem pour une série, saison par saison, plus une fiche récap HTML |
 | [TV_Shows/Rename_Episodes.py](TV_Shows/Rename_Episodes.py) | Renomme les épisodes en `{numéro} - {titre TMDB}.ext`, sous-titres compris |
 
@@ -55,7 +55,14 @@ numéro dans la collection.
 python Movies\Metadata.py --dir "D:\Films"                    # simulation
 python Movies\Metadata.py --dir "D:\Films" --apply            # applique
 python Movies\Metadata.py --dir "D:\Films\Dune (2021)" --tmdb-id 438631 --apply   # force l'id
+python Movies\Metadata.py --dir "D:\Films" --no-tag --recap --apply   # fiche seule
 ```
+
+`--recap` écrit un `recap.html` à la racine de `--dir` : un mur d'affiches groupé par saga,
+avec **les films qui manquent à chaque saga** — TMDB connaît la composition des collections,
+donc une trilogie possédée aux deux tiers se voit. Comme pour les séries, la page est un
+fichier unique (affiches encodées dedans) et la précédente sert de cache. `--no-tag` produit
+les annexes sans rien modifier dans les `.mkv`.
 
 ### Séries
 
