@@ -68,7 +68,15 @@ class TestAnnexesDesFilms(FluxTestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def lancer_films(self, *options):
-        with mock.patch.object(films.mkv, "check_tools", lambda **k: False):
+        """Lance le script films, sans MKVToolNix : l'ecriture dans le .mkv est
+        simulee et notee, ce qu'on regarde ici est ce que le script decide d'ecrire."""
+        self.ecritures = []
+
+        def faux_write(path, info, target, opts, tmdb):
+            self.ecritures.append(Path(path).name)
+            return 0, ""
+
+        with mock.patch.object(films.mkv, "check_tools", lambda **k: False),              mock.patch.object(films.mkv, "write", faux_write):
             return self.lancer(films, ["--dir", str(self.racine), *options])
 
     def test_affiche_ecrite_meme_sans_etiquetage(self):
@@ -80,6 +88,7 @@ class TestAnnexesDesFilms(FluxTestCase):
     def test_affiche_ecrite_par_un_etiquetage_normal(self):
         self.lancer_films("--artwork", "--apply")
         self.assertTrue((self.film / "folder.jpg").exists())
+        self.assertEqual(self.ecritures, ["film.mkv"])     # le .mkv aussi a ete ecrit
 
     def test_verify_n_ecrit_aucune_annexe(self):
         _, sortie = self.lancer_films("--artwork", "--verify")

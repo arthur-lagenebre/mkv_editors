@@ -149,6 +149,19 @@ class TestOutilsExternes(unittest.TestCase):
         with mock.patch.object(mkv.subprocess, "run", faux):
             self.assertEqual(mkv.probe("film.mkv"), mkv.Probe())
 
+    def test_outil_absent_pendant_l_ecriture(self):
+        # Regression : la disparition de mkvpropedit remontait en pile d'appels
+        # jusqu'a l'utilisateur, au lieu d'etre comptee comme un echec d'ecriture.
+        def absent(cmd, **kwargs):
+            raise FileNotFoundError(2, "introuvable", "mkvpropedit")
+
+        with mock.patch.object(mkv.subprocess, "run", absent):
+            code, msg = mkv.write("film.mkv", {"tracks": []},
+                                  mkv.Target(title="X", tags_xml="<Tags/>"),
+                                  mkv.Options(cover=False, stats=False, flags=False), None)
+        self.assertEqual(code, 1)
+        self.assertIn("mkvpropedit", msg)
+
     def test_message_d_ecriture_sans_sortie(self):
         faux = self._faux_run(None, None)
         target = mkv.Target(title="X", tags_xml="<Tags/>")

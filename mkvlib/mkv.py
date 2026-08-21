@@ -511,5 +511,11 @@ def write(path, info, target, opts, tmdb):
             except TmdbError as e:
                 print(f"      jaquette ignoree ({e})")
 
-        res = run_tool(cmd, cwd=tmp)
+        try:
+            res = run_tool(cmd, cwd=tmp)
+        except TOOL_FAILURES as e:
+            # check_tools verifie mkvpropedit au demarrage, mais un PATH qui change
+            # en cours de route ne doit pas produire une pile d'appels : c'est un
+            # echec d'ecriture comme un autre, deja compte par le Report.
+            return 1, f"mkvpropedit inutilisable ({_reason(e)})"
         return res.returncode, ((res.stdout or "") + (res.stderr or "")).strip()
