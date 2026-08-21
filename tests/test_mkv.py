@@ -183,9 +183,10 @@ class TestLectureParallele(unittest.TestCase):
     def test_inspect_rend_info_probe_et_remarque(self):
         faux = TestOutilsExternes._faux_run('{"tracks": []}')
         with mock.patch.object(mkv.subprocess, "run", faux):
-            info, probe, note = mkv.inspect("film.mkv", with_probe=False)
-        self.assertEqual((info, note), ({"tracks": []}, ""))
-        self.assertEqual(probe, mkv.Probe())
+            lecture = mkv.inspect("film.mkv", with_probe=False)
+        self.assertEqual((lecture.info, lecture.note), ({"tracks": []}, ""))
+        self.assertEqual(lecture.probe, mkv.Probe())
+        self.assertIsNone(lecture.tags)          # non demandes, donc non relus
 
     def test_inspect_all_couvre_tous_les_fichiers(self):
         faux = TestOutilsExternes._faux_run('{"tracks": []}')
@@ -193,7 +194,7 @@ class TestLectureParallele(unittest.TestCase):
         with mock.patch.object(mkv.subprocess, "run", faux):
             lectures = mkv.inspect_all(fichiers, with_probe=False)
         self.assertEqual(sorted(lectures), sorted(fichiers))
-        self.assertTrue(all(info == {"tracks": []} for info, _, _ in lectures.values()))
+        self.assertTrue(all(l.info == {"tracks": []} for l in lectures.values()))
 
     def test_inspect_all_sans_fichier(self):
         self.assertEqual(mkv.inspect_all([]), {})
@@ -203,9 +204,94 @@ class TestLectureParallele(unittest.TestCase):
         faux = TestOutilsExternes._faux_run(None, None)
         sortie = io.StringIO()
         with mock.patch.object(mkv.subprocess, "run", faux), redirect_stdout(sortie):
-            _, _, note = mkv.inspect("film.mkv")
-        self.assertNotEqual(note, "")
+            lecture = mkv.inspect("film.mkv")
+        self.assertNotEqual(lecture.note, "")
         self.assertEqual(sortie.getvalue(), "")
+
+
+
+
+TAGS_ECRITS = """<?xml version="1.0"?>
+<Tags>
+  <Tag>
+    <Targets><TargetTypeValue>70</TargetTypeValue></Targets>
+    <Simple><Name>TITLE</Name><String>Iron Man - Saga</String></Simple>
+  </Tag>
+  <Tag>
+    <Targets />
+    <Simple><Name>TITLE</Name><String>Iron Man</String>
+      <TagLanguageIETF>und</TagLanguageIETF></Simple>
+    <Simple><Name>ACTOR</Name><String>R. Downey Jr.</String></Simple>
+  </Tag>
+  <Tag>
+    <Targets><TrackUID>112689479983</TrackUID></Targets>
+    <Simple><Name>BPS</Name><String>128000</String></Simple>
+  </Tag>
+</Tags>"""
+
+
+class TestLectureDesTags(unittest.TestCase):
+    def test_cible_absente_vaut_cinquante(self):
+        # mkvpropedit omet TargetTypeValue quand il vaut 50, la valeur par defaut :
+        # sans cette equivalence, un fichier tout juste ecrit paraitrait different.
+        tags = mkv.parse_tags(TAGS_ECRITS)
+        self.assertIn((50, "TITLE", "Iron Man"), tags)
+        self.assertIn((70, "TITLE", "Iron Man - Saga"), tags)
+
+    def test_tags_de_piste_ecartes(self):
+        # Les statistiques de piste ne viennent pas de TMDB.
+        self.assertNotIn((50, "BPS", "128000"), mkv.parse_tags(TAGS_ECRITS))
+        self.assertEqual(len(mkv.parse_tags(TAGS_ECRITS)), 3)
+
+    def test_bom_et_xml_casse(self):
+        self.assertEqual(mkv.parse_tags("﻿" + TAGS_ECRITS), mkv.parse_tags(TAGS_ECRITS))
+        self.assertEqual(mkv.parse_tags("<Tags><Tag>"), set())
+        self.assertEqual(mkv.parse_tags(None), set())
+
+    def test_aller_retour_avec_ce_qu_on_ecrit(self):
+        xml = mkv.tags_document([mkv.tag_block(50, [mkv.simple("TITLE", "Tom & Jerry")]),
+                                 mkv.tag_block(70, [mkv.simple("PART_NUMBER", 2)])])
+        self.assertEqual(mkv.parse_tags(xml),
+                         {(50, "TITLE", "Tom & Jerry"), (70, "PART_NUMBER", "2")})
+
+    def test_read_tags_passe_par_mkvextract(self):
+        faux = TestOutilsExternes._faux_run(TAGS_ECRITS)
+        with mock.patch.object(mkv.subprocess, "run", faux):
+            tags = mkv.read_tags("film.mkv")
+        self.assertEqual(len(tags), 3)
+
+
+class TestVerificationDesTags(unittest.TestCase):
+    def setUp(self):
+        self.opts = mkv.Options(cover=False, date=False, audio_names=False, sub_names=False)
+        self.target = mkv.Target(
+            title="Iron Man",
+            tags_xml=mkv.tags_document([mkv.tag_block(50, [mkv.simple("TITLE", "Iron Man"),
+                                                           mkv.simple("GENRE", "Action")])]))
+        self.info = {"container": {"properties": {"title": "Iron Man"}}, "tracks": []}
+
+    def resultat(self, tags):
+        return dict((lbl, (ok, det)) for lbl, ok, det
+                    in mkv.verify(self.info, self.target, self.opts, tags))
+
+    def test_tags_conformes(self):
+        tags = mkv.parse_tags(self.target.tags_xml)
+        self.assertTrue(mkv.is_conform(self.info, self.target, self.opts, tags))
+
+    def test_tags_absents_signales(self):
+        # Regression : un fichier vide de tags etait declare conforme, et --skip-done
+        # le sautait.
+        etat = self.resultat(set())
+        self.assertFalse(etat["tags"][0])
+        self.assertEqual(etat["tags"][1], "2 manquant(s), 0 en trop")
+
+    def test_tags_perimes_signales(self):
+        tags = {(50, "TITLE", "Iron Man"), (50, "GENRE", "Comedie")}
+        self.assertEqual(self.resultat(tags)["tags"][1], "1 manquant(s), 1 en trop")
+
+    def test_pas_de_controle_sans_relecture(self):
+        self.assertNotIn("tags", self.resultat(None))
+        self.assertTrue(mkv.is_conform(self.info, self.target, self.opts))
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ analyse des noms de fichiers). Aucune dépendance pip : uniquement la bibliothè
 ## Prérequis
 
 - Python 3.10 ou plus récent
-- [MKVToolNix](https://mkvtoolnix.download) (`mkvpropedit`, `mkvmerge`) — obligatoire pour écrire
+- [MKVToolNix](https://mkvtoolnix.download) (`mkvpropedit`, `mkvmerge`, `mkvextract`) — obligatoire pour écrire
 - [FFmpeg](https://ffmpeg.org) (`ffprobe`) — facultatif : débit audio dans le nom des pistes,
   et détection des fichiers dont la durée ne correspond pas à l'épisode
 
@@ -95,6 +95,11 @@ Un dossier `Specials` (ou `Hors-serie`) est traité comme la saison 0 de TMDB, o
 épisodes spéciaux.
 
 ### Options communes
+
+`--verify` et `--skip-done` comparent aussi **les tags écrits** (synopsis, casting, genres,
+dates) à ce que TMDB donne aujourd'hui : un fichier étiqueté par une version plus ancienne, ou
+dont les tags ont été perdus, est signalé au lieu d'être déclaré conforme. Cette relecture coûte
+un appel à `mkvextract` par fichier, donc elle n'a lieu qu'avec ces deux options.
 
 Les deux `Metadata.py` sortent en **code 1** s'il reste quelque chose à corriger — fichiers non
 conformes en `--verify`, écritures en échec en `--apply` — et le résument en dernière ligne, de

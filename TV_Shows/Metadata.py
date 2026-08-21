@@ -14,7 +14,7 @@ Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux, c'est quasi insta
 => Fichier 100% autonome : toutes les metadonnees voyagent avec le .mkv.
 
 Dependances EXTERNES (a avoir dans le PATH) :
-  - mkvpropedit et mkvmerge   -> paquet MKVToolNix
+  - mkvpropedit, mkvmerge et mkvextract   -> paquet MKVToolNix
   - ffprobe                   -> paquet FFmpeg  (pour le debit audio + la verif. des durees)
 
 Aucune dependance pip. Necessite un acces Internet (API TMDB + jaquettes).
@@ -157,6 +157,7 @@ class Candidate:
     method: str = ""
     notes: list = field(default_factory=list)   # remarques a afficher sous le fichier
     info: dict | None = None
+    tags: set | None = None                     # tags deja ecrits, si on les a relus
 
 
 def build_plan(mkv_dir, season, args, opts):
@@ -173,15 +174,17 @@ def build_plan(mkv_dir, season, args, opts):
         ep, method = naming.match_episode(f.name, episodes, args.match_threshold, by_num)
         plan.append(Candidate(f, ep, method))
 
-    lectures = mkv.inspect_all([c.path for c in plan if c.episode], args.probe)
+    # Les tags ne sont relus que si on doit les comparer : un processus de plus.
+    besoin_tags = args.verify or args.skip_done
+    lectures = mkv.inspect_all([c.path for c in plan if c.episode], args.probe, besoin_tags)
     for candidate in plan:
         lecture = lectures.get(candidate.path)
         if lecture is None:
             continue
-        candidate.info, probe, note = lecture
-        if note:
-            candidate.notes.append(note)
-        dmin, runtime = probe.duration_min, candidate.episode.get("runtime")
+        candidate.info, candidate.tags = lecture.info, lecture.tags
+        if lecture.note:
+            candidate.notes.append(lecture.note)
+        dmin, runtime = lecture.probe.duration_min, candidate.episode.get("runtime")
         if dmin and runtime and abs(dmin - runtime) > 3:
             candidate.notes.append(
                 f"duree {dmin:.0f}min vs {runtime}min attendues -> a verifier")
@@ -209,7 +212,8 @@ def process_season(mkv_dir, season, args, opts, tmdb):
             print(f"            /!\\ {note}")
         target = episode_target(season, c.episode, args.series_name, opts)
         if args.verify:                     # mode verification : etat actuel vs vise
-            diffs = [(lbl, det) for lbl, ok, det in mkv.verify(c.info, target, opts) if not ok]
+            diffs = [(lbl, det) for lbl, ok, det
+                     in mkv.verify(c.info, target, opts, c.tags) if not ok]
             for lbl, det in diffs:
                 print(f"      [DIFF] {lbl} : actuel = {det!r}")
             if diffs:
@@ -228,7 +232,7 @@ def process_season(mkv_dir, season, args, opts, tmdb):
             if c.episode is None:
                 continue
             target = episode_target(season, c.episode, args.series_name, opts)
-            if args.skip_done and mkv.is_conform(c.info, target, opts):
+            if args.skip_done and mkv.is_conform(c.info, target, opts, c.tags):
                 print(f"  [SKIP] {c.path.name} (deja a jour)")
                 continue
             code, msg = mkv.write(c.path, c.info, target, opts, tmdb)
