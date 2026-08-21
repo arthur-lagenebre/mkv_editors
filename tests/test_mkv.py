@@ -1,8 +1,12 @@
 """Noms de pistes, tags XML et comparaison a l'etat vise (aucun outil externe requis)."""
 
+import io
+import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -107,6 +111,52 @@ class TestVerification(unittest.TestCase):
         opts = mkv.Options.from_args(Args())
         self.assertEqual((opts.cover, opts.sub_names, opts.stats, opts.image_size),
                          (False, False, False, "w300"))
+
+
+
+
+class TestOutilsExternes(unittest.TestCase):
+    """Comment la sortie de mkvmerge et de ffprobe est lue."""
+
+    @staticmethod
+    def _faux_run(stdout, stderr=""):
+        def run(cmd, **kwargs):
+            run.vu = kwargs
+            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr=stderr)
+        run.vu = {}
+        return run
+
+    def test_sortie_decodee_en_utf8(self):
+        # Regression : sans encodage explicite, Python decode en cp1252 et un
+        # caractere absent de cette table (le trait d'union de "est-ce", U+2010)
+        # fait echouer la lecture dans un thread de subprocess.
+        faux = self._faux_run('{"tracks": []}')
+        with mock.patch.object(mkv.subprocess, "run", faux):
+            mkv.identify("film.mkv")
+        self.assertEqual(faux.vu.get("encoding"), "utf-8")
+        self.assertEqual(faux.vu.get("errors"), "replace")
+
+    def test_sortie_vide_ne_plante_pas(self):
+        # C'est ainsi que se manifeste un echec de decodage : stdout a None,
+        # code de retour 0, aucune exception.
+        faux = self._faux_run(None, None)
+        with mock.patch.object(mkv.subprocess, "run", faux), \
+             redirect_stdout(io.StringIO()):
+            self.assertIsNone(mkv.identify("film.mkv"))
+            self.assertEqual(mkv.probe("film.mkv"), mkv.Probe())
+
+    def test_json_inattendu_ignore(self):
+        faux = self._faux_run("[]")
+        with mock.patch.object(mkv.subprocess, "run", faux):
+            self.assertEqual(mkv.probe("film.mkv"), mkv.Probe())
+
+    def test_message_d_ecriture_sans_sortie(self):
+        faux = self._faux_run(None, None)
+        target = mkv.Target(title="X", tags_xml="<Tags/>")
+        opts = mkv.Options(cover=False, stats=False, flags=False)
+        with mock.patch.object(mkv.subprocess, "run", faux):
+            code, msg = mkv.write("film.mkv", {"tracks": []}, target, opts, None)
+        self.assertEqual((code, msg), (0, ""))
 
 
 if __name__ == "__main__":

@@ -21,6 +21,21 @@ from .tmdb import TmdbError
 TOOL_FAILURES = (subprocess.SubprocessError, OSError, json.JSONDecodeError)
 
 
+def run_tool(cmd, **kwargs):
+    """Lance un outil externe et recupere sa sortie, decodee en UTF-8.
+
+    Preciser l'encodage n'est pas un detail : mkvmerge et ffprobe ecrivent leur
+    JSON en UTF-8, alors que Python decoderait avec l'encodage local (cp1252 sous
+    Windows). Il suffit d'un caractere absent de cp1252 dans un synopsis - le
+    trait d'union typographique de "est-ce" en fournit un - pour que le decodage
+    echoue dans un thread interne de subprocess : la sortie revient alors a None,
+    sans erreur ni code de retour anormal, et le fichier devient illisible juste
+    apres avoir ete etiquete.
+    """
+    return subprocess.run(cmd, capture_output=True,
+                          encoding="utf-8", errors="replace", **kwargs)
+
+
 def _reason(exc):
     """Message court expliquant l'echec d'un outil externe."""
     if isinstance(exc, subprocess.CalledProcessError):
@@ -51,8 +66,10 @@ def check_tools(needs_mkvtoolnix=True):
 def identify(path):
     """JSON de 'mkvmerge -J' (pistes + pieces jointes), ou None si illisible."""
     try:
-        out = subprocess.run(["mkvmerge", "-J", str(path)],
-                             capture_output=True, text=True, check=True).stdout
+        out = run_tool(["mkvmerge", "-J", str(path)], check=True).stdout
+        if not out:
+            print("      lecture impossible par mkvmerge (sortie vide)")
+            return None
         return json.loads(out)
     except TOOL_FAILURES as e:
         print(f"      lecture impossible par mkvmerge ({_reason(e)})")
@@ -73,12 +90,12 @@ def probe(path):
     lances par fichier la ou un seul suffit.
     """
     try:
-        out = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_format", "-show_streams", str(path)],
-            capture_output=True, text=True, check=True).stdout
-        data = json.loads(out)
+        out = run_tool(["ffprobe", "-v", "quiet", "-print_format", "json",
+                        "-show_format", "-show_streams", str(path)], check=True).stdout
+        data = json.loads(out) if out else None
     except TOOL_FAILURES:
+        return Probe()
+    if not isinstance(data, dict):
         return Probe()
 
     duration = None
@@ -373,5 +390,5 @@ def write(path, info, target, opts, tmdb):
             except TmdbError as e:
                 print(f"      jaquette ignoree ({e})")
 
-        res = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True)
-        return res.returncode, (res.stdout + res.stderr).strip()
+        res = run_tool(cmd, cwd=tmp)
+        return res.returncode, ((res.stdout or "") + (res.stderr or "")).strip()
