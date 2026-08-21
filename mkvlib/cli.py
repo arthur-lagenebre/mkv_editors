@@ -1,6 +1,5 @@
 """Utilitaires de ligne de commande : console, fichier .env, cle TMDB."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -20,18 +19,20 @@ def setup_console():
             pass
 
 
-def load_dotenv(filename=".env"):
-    """Charge un fichier .env (lignes CLE=valeur) dans les variables d'environnement.
+def read_dotenv(filename=".env"):
+    """Valeurs d'un fichier .env (lignes CLE=valeur), en dictionnaire.
 
     Le fichier est cherche en remontant depuis le dossier de ce module, puis
-    depuis le dossier courant ; on s'arrete au premier trouve. Les variables
-    deja definies dans l'environnement ne sont jamais ecrasees.
+    depuis le dossier courant ; on s'arrete au premier trouve. Rien n'est ecrit
+    dans les variables d'environnement : le .env est la seule source de la cle,
+    et mieux vaut que ca se voie ici plutot que de se deviner ailleurs.
     """
     for start in (Path(__file__).resolve().parent, Path.cwd().resolve()):
         for folder in (start, *start.parents):
             path = folder / filename
             if not path.is_file():
                 continue
+            valeurs = {}
             for line in path.read_text(encoding="utf-8-sig").splitlines():
                 line = line.strip()
                 if line.startswith("export "):
@@ -43,23 +44,21 @@ def load_dotenv(filename=".env"):
                 if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
                     value = value[1:-1]
                 if name:
-                    os.environ.setdefault(name, value)
-            return path
-    return None
+                    valeurs.setdefault(name, value)      # la premiere ligne l'emporte
+            return valeurs
+    return {}
 
 
 NO_KEY_MESSAGE = ("Aucune cle TMDB. Renseigne la ligne TMDB_KEY=... du fichier .env "
-                  "(voir .env.example), la variable d'environnement TMDB_API_KEY, "
-                  "ou la constante TMDB_KEY en haut du fichier.")
+                  "a la racine du depot (voir .env.example).")
 
 
-def resolve_tmdb_key(fallback=""):
-    """Cle TMDB par priorite : .env > TMDB_API_KEY > TMDB_KEY > constante du script.
+def resolve_tmdb_key():
+    """Cle TMDB lue dans le fichier .env, seule source acceptee.
 
-    Quitte avec un message explicite si aucune cle n'est disponible.
+    Quitte avec un message explicite si le fichier manque ou ne la donne pas.
     """
-    load_dotenv()
-    key = os.environ.get("TMDB_API_KEY") or os.environ.get("TMDB_KEY") or fallback
+    key = read_dotenv().get("TMDB_KEY", "").strip()
     if not key:
         sys.exit(NO_KEY_MESSAGE)
     return key

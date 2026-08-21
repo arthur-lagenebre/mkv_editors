@@ -14,8 +14,7 @@ Format applique :  "Titre (Annee)"
 C'est le pendant de TV_Shows/Rename_Episodes.py, et le meilleur moyen de fiabiliser
 Metadata.py : toute la reconnaissance des films repose sur le nom du dossier.
 
-Cle TMDB (par priorite) : fichier .env a la racine du depot (TMDB_KEY=...) > variable
-d'env TMDB_API_KEY > constante TMDB_KEY.
+Cle TMDB : ligne TMDB_KEY=... du fichier .env, a la racine du depot.
 
 Usage :
   python Rename_Movies.py --dir "D:\Films"                    # simulation
@@ -31,11 +30,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
 from mkvlib import cache, cli, lookup, naming, rename             # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError                       # noqa: E402
-
-# ============================================================================
-# Cle API TMDB (par priorite : .env > env TMDB_API_KEY > ceci).
-TMDB_KEY = ""
-# ============================================================================
 
 
 def target_stem(film, order, pin_id):
@@ -137,7 +131,7 @@ def main():
 
     cli.setup_console()
     cli.check_dir(args.dir)
-    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="rename_movies/1.0",
+    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="rename_movies/1.0",
                 cache=cache.Cache(read=not args.no_cache))
 
     mode = cli.mode_label(args, "rien ne sera renomme ; ajoute --apply")

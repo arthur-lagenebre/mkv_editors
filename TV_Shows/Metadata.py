@@ -24,9 +24,8 @@ Installation des outils (Windows) :
   winget install MoritzBunkus.MKVToolNix
   winget install Gyan.FFmpeg
 
-Cle TMDB gratuite : themoviedb.org -> Parametres -> API. Fournie de 3 facons (par priorite) :
-  1) fichier .env a la racine du depot (TMDB_KEY=...)   2) variable d'env TMDB_API_KEY
-  3) constante TMDB_KEY en haut du fichier
+Cle TMDB gratuite : themoviedb.org -> Parametres -> API. A mettre dans le fichier .env
+a la racine du depot, sur une ligne TMDB_KEY=... : c'est la seule source.
 
 Usage — pointe --dir sur la RACINE de la serie (dossiers "Saison N") :
 
@@ -74,12 +73,6 @@ from xml.sax.saxutils import escape
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
 from mkvlib import artwork, cache, cli, embed, lookup, mkv, naming  # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
-
-# ============================================================================
-# Cle API TMDB : colle-la ici entre les guillemets pour ne plus avoir a la
-# retaper. Priorite : .env > env TMDB_API_KEY > ceci.
-TMDB_KEY = ""
-# ============================================================================
 
 
 # ----------------------------------------------------------------------------
@@ -432,7 +425,7 @@ def main():
     cli.check_dir(args.dir)
     args.probe = mkv.check_tools(needs_mkvtoolnix=not args.no_tag)
     opts = mkv.Options.from_args(args)
-    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="tag_mkv/1.0",
+    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="tag_mkv/1.0",
                 cache=cache.Cache(read=not args.no_cache))
 
     # La banniere d'abord : la recherche de serie s'affiche dessous, pas avant.

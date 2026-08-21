@@ -13,8 +13,7 @@ Format applique :  "{numero} - {nom de l'episode}.ext"
 L'association fichier <-> episode se fait par le numero present dans le nom actuel
 (S01E05, 1x05, 05 - ..., Episode 5...), avec repli sur une correspondance de titre.
 
-Cle TMDB (par priorite) : fichier .env a la racine du depot (TMDB_KEY=...) > variable
-d'env TMDB_API_KEY > constante TMDB_KEY.
+Cle TMDB : ligne TMDB_KEY=... du fichier .env, a la racine du depot.
 
 Structure : un sous-dossier "Saison N" par saison, ou --dir pointant sur un dossier de saison.
 
@@ -36,10 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importe
 from mkvlib import cache, cli, lookup, naming, rename             # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 
-# ============================================================================
-# Cle API TMDB (par priorite : .env > env TMDB_API_KEY > ceci).
-TMDB_KEY = ""
-# ============================================================================
+
 def plan_season(folder, season, threshold):
     """Prevoit les renommages d'un dossier. Retourne (planned, tally).
 
@@ -124,7 +120,7 @@ def main():
 
     cli.setup_console()
     cli.check_dir(args.dir)
-    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="rename_ep/1.0",
+    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="rename_ep/1.0",
                 cache=cache.Cache(read=not args.no_cache))
 
     mode = cli.mode_label(args, "rien ne sera renomme ; ajoute --apply")

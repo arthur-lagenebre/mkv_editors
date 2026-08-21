@@ -39,9 +39,10 @@ Paramètres → API). Le `.env` n'est jamais commité, et sert à tous les scrip
 TMDB_KEY=votre_cle
 ```
 
-Ordre de priorité : `.env` > variable d'environnement `TMDB_API_KEY` > `TMDB_KEY` >
-constante `TMDB_KEY` en haut du script. La clé v3 (hexadécimale) comme le token de lecture v4
-(JWT) fonctionnent.
+C'est la **seule** source : ni variable d'environnement, ni constante dans les scripts. Le
+fichier est cherché en remontant depuis le dossier du script, donc les trois s'en servent sans
+qu'on ait rien à exporter. La clé v3 (hexadécimale) comme le token de lecture v4 (JWT)
+fonctionnent.
 
 ## Utilisation
 

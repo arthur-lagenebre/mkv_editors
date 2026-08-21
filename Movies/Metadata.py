@@ -20,9 +20,8 @@ ffprobe (FFmpeg).
 Aucune dependance pip. Necessite Internet (API TMDB + jaquettes).
 Le code partage avec les autres scripts du depot vit dans mkvlib/ (a la racine).
 
-Cle TMDB (par priorite) : fichier .env a la racine du depot (TMDB_KEY=...)  >  variable
-d'env TMDB_API_KEY  >  constante TMDB_KEY.
-(Le meme .env sert a tous les scripts du depot : la cle n'est ecrite qu'une fois.)
+Cle TMDB : ligne TMDB_KEY=... du fichier .env, a la racine du depot. C'est la seule
+source, et le meme .env sert a tous les scripts : la cle n'est ecrite qu'une fois.
 
 Structure attendue : soit un sous-dossier par film (les .mkv dedans), soit des .mkv a plat
 dans --dir. Un film coupe en plusieurs fichiers (CD1/CD2) recoit les memes metadonnees
@@ -58,12 +57,6 @@ from xml.sax.saxutils import escape
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
 from mkvlib import artwork, cache, cli, embed, lookup, mkv, naming  # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError, release_region   # noqa: E402
-
-# ============================================================================
-# Cle API TMDB : colle-la ici entre les guillemets pour ne plus avoir a la
-# retaper. Priorite : .env > env TMDB_API_KEY > ceci.
-TMDB_KEY = ""
-# ============================================================================
 
 
 # ----------------------------------------------------------------------------
@@ -412,7 +405,7 @@ def main():
     cli.check_dir(args.dir)
     args.probe = mkv.check_tools(needs_mkvtoolnix=not args.no_tag)
     opts = mkv.Options.from_args(args)
-    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="movies_mkv/1.0",
+    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="movies_mkv/1.0",
                 cache=cache.Cache(read=not args.no_cache))
 
     print(f"=== {cli.mode_label(args)} ===   source : TMDB {args.language}\n")
