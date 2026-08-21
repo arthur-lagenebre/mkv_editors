@@ -112,5 +112,34 @@ class TestSaisonUnique(FluxTestCase):
         self.assertEqual(self.lancer_rename("Ma Serie"), [1])
 
 
+
+
+class TestDossierInvalide(FluxTestCase):
+    """Une faute de frappe dans --dir doit s'arreter net, avant tout appel TMDB."""
+
+    def echec(self, module, dossier, options=()):
+        tmdb = FauxTmdb()
+        with self.assertRaises(SystemExit) as ctx:
+            self.lancer(module, ["--dir", str(dossier), *options], tmdb)
+        return str(ctx.exception), tmdb
+
+    def test_films_dossier_introuvable(self):
+        message, _ = self.echec(films, "dossier_qui_n_existe_pas")
+        self.assertIn("introuvable", message)
+
+    def test_rename_dossier_introuvable(self):
+        # Regression : levait une FileNotFoundError brute en pleine figure.
+        message, tmdb = self.echec(rename, "dossier_qui_n_existe_pas", ["--tmdb-id", "42"])
+        self.assertIn("introuvable", message)
+        self.assertEqual(tmdb.saisons, [])          # arret avant le reseau
+
+    def test_dir_sur_un_fichier(self):
+        with tempfile.TemporaryDirectory() as d:
+            fichier = Path(d) / "film.mkv"
+            fichier.write_text("x", encoding="utf-8")
+            message, _ = self.echec(rename, fichier, ["--tmdb-id", "42"])
+        self.assertIn("pas un fichier", message)
+
+
 if __name__ == "__main__":
     unittest.main()

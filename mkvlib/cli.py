@@ -65,6 +65,21 @@ def resolve_tmdb_key(fallback=""):
     return key
 
 
+def check_dir(path):
+    """Verifie que --dir designe un dossier existant, et s'arrete clairement sinon.
+
+    Une faute de frappe dans le chemin est l'erreur la plus courante : sans ce
+    controle, elle ressort soit en pile d'appels, soit - pire - en "aucun fichier
+    trouve", qui ressemble a une mediatheque vide.
+    """
+    dossier = Path(path)
+    if not dossier.exists():
+        sys.exit(f"Dossier introuvable : {dossier}")
+    if not dossier.is_dir():
+        sys.exit(f"--dir attend un dossier, pas un fichier : {dossier}")
+    return dossier
+
+
 def mode_label(args, simulation="rien ne sera ecrit ; ajoute --apply pour appliquer"):
     """Libelle du mode courant, pour la banniere affichee au demarrage."""
     if getattr(args, "verify", False):

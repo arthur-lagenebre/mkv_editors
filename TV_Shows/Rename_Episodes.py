@@ -237,6 +237,7 @@ def main():
     args = ap.parse_args()
 
     cli.setup_console()
+    cli.check_dir(args.dir)
     tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="rename_ep/1.0",
                 cache=cache.Cache(read=not args.no_cache))
 

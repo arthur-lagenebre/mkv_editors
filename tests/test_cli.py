@@ -73,5 +73,26 @@ class TestBanniere(unittest.TestCase):
         self.assertIn("SIMULATION", cli.mode_label(types.SimpleNamespace(apply=False, verify=False)))
 
 
+
+
+class TestDossier(unittest.TestCase):
+    def test_dossier_valide_rendu(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(cli.check_dir(d), Path(d))
+
+    def test_dossier_introuvable(self):
+        with self.assertRaises(SystemExit) as ctx:
+            cli.check_dir("dossier_qui_n_existe_pas")
+        self.assertIn("introuvable", str(ctx.exception))
+
+    def test_fichier_au_lieu_d_un_dossier(self):
+        with tempfile.TemporaryDirectory() as d:
+            fichier = Path(d) / "film.mkv"
+            fichier.write_text("x", encoding="utf-8")
+            with self.assertRaises(SystemExit) as ctx:
+                cli.check_dir(fichier)
+        self.assertIn("pas un fichier", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
