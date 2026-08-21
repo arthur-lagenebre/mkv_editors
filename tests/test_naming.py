@@ -95,7 +95,6 @@ class TestNomsEcrits(unittest.TestCase):
         self.assertEqual(naming.fr_date("pas une date"), "pas une date")
 
 
-
 class TestAssociation(unittest.TestCase):
     EPISODES = [{"episode_number": 1, "name": "Le debut"},
                 {"episode_number": 2, "name": "Warhammer 40,000 : et ils marcheront"}]
@@ -164,8 +163,6 @@ class TestSpeciaux(unittest.TestCase):
             for nom in ("Saison 1", "Specials"):
                 (Path(d) / nom).mkdir()
             self.assertEqual([n for _, n in naming.find_seasons(d)], [0, 1])
-
-
 
 
 class TestIdEpingle(unittest.TestCase):

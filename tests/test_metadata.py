@@ -139,7 +139,6 @@ class TestFilms(unittest.TestCase):
         self.assertEqual([n.text for n in root.findall("./Tag/Targets/TargetTypeValue")], ["50"])
 
 
-
 class TestRecap(unittest.TestCase):
     SAISON = {"season_number": 1, "name": "Saison 1", "episodes": [
         {"episode_number": 1, "name": "Un", "air_date": "2024-01-02"},

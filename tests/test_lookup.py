@@ -122,8 +122,6 @@ class TestResolutionDeLaSerie(unittest.TestCase):
         self.assertIn("Echec de la recherche", sortie)
 
 
-
-
 class TestIdEpingle(unittest.TestCase):
     def resoudre(self, dossier, saison=None, forced=None):
         tmdb = FauxTmdb([{"id": 1, "name": "Cherche"}])

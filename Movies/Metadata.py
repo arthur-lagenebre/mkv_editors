@@ -128,9 +128,9 @@ def movie_target(movie, opts):
 def process_movie(folder, path, movie, args, opts, tmdb, foldered):
     """Traite un film et retourne son Report."""
     report = mkv.Report(matched=1, total=1)
-    info = mkv.identify(path)
-    if info and args.probe:
-        mkv.annotate_bitrates(info, path)      # debits pour le nom des pistes
+    info, _, note = mkv.inspect(path, args.probe)   # debits compris, pour le nom des pistes
+    if note:
+        print(f"      {note}")
     target = movie_target(movie, opts)
 
     if args.verify:
