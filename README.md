@@ -50,7 +50,9 @@ passé. `--verify` (les deux `Metadata.py`) compare l'état des fichiers à TMDB
 ### Films
 
 Un sous-dossier par film, ou des `.mkv` à plat. Le titre et l'année sont lus dans le nom —
-`Inception (2010)`. Un préfixe d'ordre de saga (`1 - Iron Man`) est reconnu et inscrit comme
+`Inception (2010)`. Un film coupé en plusieurs fichiers (`CD1`/`CD2`) est étiqueté en entier :
+tout `.mkv` pesant au moins la moitié du plus gros du dossier est traité, ce qui laisse de côté
+bandes-annonces et making-of. Un préfixe d'ordre de saga (`1 - Iron Man`) est reconnu et inscrit comme
 numéro dans la collection.
 
 ```powershell
