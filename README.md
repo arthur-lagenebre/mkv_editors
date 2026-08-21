@@ -109,6 +109,12 @@ Les deux `Metadata.py` sortent en **code 1** s'il reste quelque chose à corrige
 conformes en `--verify`, écritures en échec en `--apply` — et le résument en dernière ligne, de
 quoi les enchaîner dans un script.
 
+Les réponses de TMDB sont gardées **7 jours** dans `%LOCALAPPDATA%\mkv_editors\tmdb`
+(`~/.cache/mkv_editors/tmdb` ailleurs) — jamais à côté de la médiathèque. Repasser sur une
+grosse collection ne refait donc pas tous les appels : mesuré sur 8 requêtes, 416 ms contre
+56 ms. `--no-cache` ignore ce qui est en cache et le rafraîchit ; supprimer le dossier est
+sans conséquence, il se reconstruit tout seul.
+
 `--skip-done` saute ce qui est déjà conforme, `--language` change la langue TMDB (défaut `fr-FR` ;
 c'est elle qui détermine le pays de la date de sortie retenue pour les films), et les `--no-*`
 (`--no-cover`, `--no-date`, `--no-audio-names`, `--no-sub-names`, `--no-flags`, `--no-stats`)

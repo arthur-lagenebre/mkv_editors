@@ -6,12 +6,14 @@ reponses preparees.
 
 import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 from urllib.error import HTTPError, URLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from mkvlib import cache
 from mkvlib import tmdb as tmdb_mod
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError, release_region
 
@@ -137,6 +139,68 @@ class TestRegion(unittest.TestCase):
         self.assertEqual(release_region("fr-FR"), "FR")
         self.assertEqual(release_region("pt-BR"), "BR")
         self.assertIsNone(release_region("fr"))
+
+
+
+
+class TestCacheDesReponses(ClientTestCase):
+    def client(self, reponses, cache, **kwargs):
+        """Comme ClientTestCase.call, mais avec un cache et plusieurs appels.
+
+        Le remplacement d'urlopen tient jusqu'a la fin du test : sans quoi les
+        appels partiraient pour de bon des le retour de cette methode.
+        """
+        requetes = []
+
+        def fake_urlopen(request, timeout=None):
+            requetes.append(request)
+            return reponses.pop(0)
+
+        patch = mock.patch.object(tmdb_mod, "urlopen", fake_urlopen)
+        patch.start()
+        self.addCleanup(patch.stop)
+        return Tmdb("0123456789abcdef", cache=cache, **kwargs), requetes
+
+    def test_seconde_requete_servie_par_le_cache(self):
+        with tempfile.TemporaryDirectory() as d:
+            c = cache.Cache(Path(d))
+            client, requetes = self.client([FakeResponse(b'{"id": 1}')], c)
+            self.assertEqual(client.get("movie/1"), {"id": 1})
+            self.assertEqual(client.get("movie/1"), {"id": 1})   # plus aucun appel reseau
+            self.assertEqual(len(requetes), 1)
+
+    def test_la_cle_de_cache_ignore_la_cle_d_api(self):
+        # Elle ne doit jamais se retrouver sur le disque.
+        with tempfile.TemporaryDirectory() as d:
+            c = cache.Cache(Path(d))
+            client, _ = self.client([FakeResponse(b"{}")], c)
+            client.get("movie/1")
+            contenus = [f.read_text(encoding="utf-8") for f in Path(d).glob("*.json")]
+            self.assertTrue(contenus)
+            self.assertFalse(any("0123456789abcdef" in x for x in contenus))
+            self.assertTrue(any('"fr-FR:movie/1"' in x for x in contenus))
+
+    def test_langues_differentes_ne_se_melangent_pas(self):
+        with tempfile.TemporaryDirectory() as d:
+            c = cache.Cache(Path(d))
+            client, requetes = self.client(
+                [FakeResponse(b'{"t": "fr"}'), FakeResponse(b'{"t": "en"}')], c)
+            self.assertEqual(client.get("tv/1"), {"t": "fr"})
+            self.assertEqual(client.get("tv/1", "en-US"), {"t": "en"})
+            self.assertEqual(len(requetes), 2)
+
+    def test_reponse_illisible_non_mise_en_cache(self):
+        with tempfile.TemporaryDirectory() as d:
+            c = cache.Cache(Path(d))
+            client, _ = self.client([FakeResponse(b"<html>")], c)
+            with self.assertRaises(TmdbError):
+                client.get("movie/1")
+            self.assertEqual(list(Path(d).glob("*.json")), [])
+
+    def test_sans_cache_le_client_marche_pareil(self):
+        client, requetes = self.client([FakeResponse(b'{"id": 1}')], None)
+        self.assertEqual(client.get("movie/1"), {"id": 1})
+        self.assertEqual(len(requetes), 1)
 
 
 if __name__ == "__main__":

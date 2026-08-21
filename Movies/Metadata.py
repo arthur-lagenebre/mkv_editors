@@ -39,7 +39,7 @@ Usage :
   python Metadata.py --dir "D:\Films\Inception (2010)" --tmdb-id 27205 --apply   # force l'id (1 film)
   python Metadata.py --dir "D:\Films" --verify                # verifie seulement
 
-Options : --apply --verify --skip-done --artwork --recap --no-tag
+Options : --apply --verify --skip-done --artwork --recap --no-tag --no-cache
           --no-cover --no-date --no-audio-names --no-sub-names --no-flags --no-stats
           --tmdb-id (force, si un seul film) --language (defaut fr-FR) --image-size (w780)
 
@@ -56,7 +56,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
-from mkvlib import artwork, cli, embed, lookup, mkv, naming        # noqa: E402
+from mkvlib import artwork, cache, cli, embed, lookup, mkv, naming  # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError, release_region   # noqa: E402
 
 # ============================================================================
@@ -435,6 +435,8 @@ def parse_args():
                     help="Dossier de films (un sous-dossier par film, ou des .mkv a plat)")
     ap.add_argument("--tmdb-id", help="Force l'id TMDB (utile si --dir ne contient qu'un seul film)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="Ignore le cache des reponses TMDB et le rafraichit")
     ap.add_argument("--apply", action="store_true", help="Applique reellement (defaut : simulation)")
     ap.add_argument("--verify", action="store_true", help="Verifie seulement (aucune ecriture)")
     ap.add_argument("--skip-done", action="store_true", help="Saute les films deja conformes")
@@ -460,7 +462,8 @@ def main():
     cli.setup_console()
     args.probe = mkv.check_tools(needs_mkvtoolnix=not args.no_tag)
     opts = mkv.Options.from_args(args)
-    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="movies_mkv/1.0")
+    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="movies_mkv/1.0",
+                cache=cache.Cache(read=not args.no_cache))
 
     print(f"=== {cli.mode_label(args)} ===   source : TMDB {args.language}\n")
 

@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
-from mkvlib import cli, lookup, naming                            # noqa: E402
+from mkvlib import cache, cli, lookup, naming                     # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 
 # ============================================================================
@@ -229,13 +229,16 @@ def main():
     ap.add_argument("--tmdb-id", help="Identifiant TMDB de la serie "
                     "(par defaut : recherche sur le nom du dossier)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="Ignore le cache des reponses TMDB et le rafraichit")
     ap.add_argument("--apply", action="store_true", help="Renomme reellement (defaut : simulation)")
     ap.add_argument("--match-threshold", type=float, default=0.55,
                     help="Score minimal pour une association par titre (0-1)")
     args = ap.parse_args()
 
     cli.setup_console()
-    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="rename_ep/1.0")
+    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="rename_ep/1.0",
+                cache=cache.Cache(read=not args.no_cache))
 
     mode = cli.mode_label(args, "rien ne sera renomme ; ajoute --apply")
     print(f"=== {mode} ===   source : TMDB {args.language}")

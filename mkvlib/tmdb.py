@@ -45,12 +45,13 @@ def release_region(language):
 
 class Tmdb:
     def __init__(self, key, language="fr-FR", user_agent="mkv_editors/1.0",
-                 timeout=30, attempts=3):
+                 timeout=30, attempts=3, cache=None):
         self.key = key
         self.language = language
         self.user_agent = user_agent
         self.timeout = timeout
         self.attempts = attempts
+        self.cache = cache
 
     # ------------------------------------------------------------------ HTTP
     @staticmethod
@@ -87,20 +88,31 @@ class Tmdb:
             time.sleep(wait if wait is not None else 2 ** (attempt - 1) + random.uniform(0, 0.5))
 
     def get(self, endpoint, language=None):
-        """GET sur un endpoint de l'API, decode en JSON."""
+        """GET sur un endpoint de l'API, decode en JSON. Passe par le cache s'il y en a un."""
+        langue = language or self.language
+        # La cle de cache ne retient que la langue et le chemin : jamais la cle d'API.
+        cle = f"{langue}:{endpoint}"
+        if self.cache is not None:
+            garde = self.cache.get(cle)
+            if garde is not None:
+                return garde
+
         url = f"{API}/{endpoint}"
         sep = "&" if "?" in url else "?"
         headers = {"User-Agent": self.user_agent, "Accept": "application/json"}
         if self.key.startswith("ey") and self.key.count(".") == 2:   # token de lecture v4
             headers["Authorization"] = f"Bearer {self.key}"
-            url += f"{sep}language={language or self.language}"
+            url += f"{sep}language={langue}"
         else:                                                        # cle API v3
-            url += f"{sep}api_key={self.key}&language={language or self.language}"
+            url += f"{sep}api_key={self.key}&language={langue}"
         body, _ = self._request(url, headers)
         try:
-            return json.loads(body.decode("utf-8"))
+            data = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as e:
             raise TmdbError(f"reponse TMDB illisible : {e}") from e
+        if self.cache is not None:
+            self.cache.put(cle, data)
+        return data
 
     # ----------------------------------------------------------------- Films
     def search_movie(self, title, year=None):
