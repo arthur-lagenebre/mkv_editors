@@ -143,5 +143,28 @@ class TestInventaire(unittest.TestCase):
 
     def test_dossier_vide(self):
         self.assertEqual(self.inventaire(), set())
+
+
+class TestSpeciaux(unittest.TestCase):
+    def test_dossiers_de_speciaux_valent_la_saison_zero(self):
+        # TMDB range les episodes speciaux en saison 0, mais le dossier
+        # s'appelle rarement "Saison 0".
+        for nom in ("Specials", "Special", "specials", "Hors-serie", "Hors series"):
+            with self.subTest(nom=nom):
+                self.assertEqual(naming.season_number(nom), 0)
+
+    def test_dossiers_annexes_non_confondus(self):
+        # "Bonus" contient des making-of, pas des episodes TMDB.
+        for nom in ("Bonus", "Making of", "Extras"):
+            with self.subTest(nom=nom):
+                self.assertIsNone(naming.season_number(nom))
+
+    def test_specials_trie_avant_la_saison_un(self):
+        with tempfile.TemporaryDirectory() as d:
+            for nom in ("Saison 1", "Specials"):
+                (Path(d) / nom).mkdir()
+            self.assertEqual([n for _, n in naming.find_seasons(d)], [0, 1])
+
+
 if __name__ == "__main__":
     unittest.main()

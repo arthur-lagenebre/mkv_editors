@@ -89,7 +89,14 @@ confondus, donc il reste juste même avec `--no-tag`. `--artwork` écrit les `fo
 chaque saison. `--no-tag` génère ces annexes sans toucher aux épisodes, pour une série qui n'est
 pas en `.mkv`.
 
+Un dossier `Specials` (ou `Hors-serie`) est traité comme la saison 0 de TMDB, où vivent les
+épisodes spéciaux.
+
 ### Options communes
+
+Les deux `Metadata.py` sortent en **code 1** s'il reste quelque chose à corriger — fichiers non
+conformes en `--verify`, écritures en échec en `--apply` — et le résument en dernière ligne, de
+quoi les enchaîner dans un script.
 
 `--skip-done` saute ce qui est déjà conforme, `--language` change la langue TMDB (défaut `fr-FR` ;
 c'est elle qui détermine le pays de la date de sortie retenue pour les films), et les `--no-*`

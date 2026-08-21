@@ -170,18 +170,18 @@ def build_plan(mkv_dir, season, args, opts):
 
 def process_season(mkv_dir, season, args, opts, tmdb):
     """Construit le plan d'une saison, l'affiche, et applique si --apply.
-    Retourne (nb_associes, nb_fichiers)."""
+    Retourne le Report de la saison."""
     plan = build_plan(mkv_dir, season, args, opts)
     if not plan:
         print(f"  Aucun .mkv dans {mkv_dir}")
-        return 0, 0
+        return mkv.Report()
 
-    matched = 0
+    report = mkv.Report(total=len(plan))
     for f, ep, method, warn, info in plan:
         if ep is None:
             print(f"  [NON ASSOCIE] {f.name}")
             continue
-        matched += 1
+        report.matched += 1
         sn, en = season.get("season_number", 1), ep.get("episode_number", 0)
         print(f"  [S{sn:02d}E{en:02d}] {f.name}")
         print(f"            -> {ep.get('name', '')}   ({method})")
@@ -192,7 +192,9 @@ def process_season(mkv_dir, season, args, opts, tmdb):
             diffs = [(lbl, det) for lbl, ok, det in mkv.verify(info, target, opts) if not ok]
             for lbl, det in diffs:
                 print(f"      [DIFF] {lbl} : actuel = {det!r}")
-            if not diffs:
+            if diffs:
+                report.diffs += 1
+            else:
                 print("      [OK] deja conforme")
             continue
         if opts.date and target.date:
@@ -210,10 +212,12 @@ def process_season(mkv_dir, season, args, opts, tmdb):
                 print(f"  [SKIP] {f.name} (deja a jour)")
                 continue
             code, msg = mkv.write(f, info, target, opts, tmdb)
+            if code:
+                report.failures += 1
             print(f"  [{'OK' if code == 0 else 'ECHEC'}] {f.name}" + (f"  -> {msg}" if code else ""))
 
-    print(f"  => {matched}/{len(plan)} associe(s).")
-    return matched, len(plan)
+    print(f"  => {report.matched}/{report.total} associe(s).")
+    return report
 
 
 # ----------------------------------------------------------------------------
@@ -423,7 +427,7 @@ def main():
     seasons = naming.find_seasons(args.dir)
     if seasons:
         # --- Multi-saisons : --dir est la racine de la serie ---
-        total_m = total_f = 0
+        report = mkv.Report()
         processed = []
         for sub, num in seasons:
             print(f"--- {sub.name}  (TMDB saison {num}) ---")
@@ -435,32 +439,37 @@ def main():
             if args.no_tag:
                 print("  episodes non modifies (--no-tag)")
             else:
-                m, tot = process_season(sub, data, args, opts, tmdb)
-                total_m += m
-                total_f += tot
+                report += process_season(sub, data, args, opts, tmdb)
             processed.append(season_run(sub, num, data, args))
             print()
         if not args.no_tag:
-            print(f"TOTAL : {total_m}/{total_f} fichier(s) associe(s) "
+            print(f"TOTAL : {report.matched}/{report.total} fichier(s) associe(s) "
                   f"sur {len(seasons)} saison(s) detectee(s).")
         generate_sidecars(args.dir, args.series_name, show, processed, args, tmdb)
     else:
         # --- Saison unique : --dir contient directement les .mkv ---
-        num = naming.season_number(Path(args.dir).name) or 1
+        num = naming.season_number(Path(args.dir).name)
+        num = 1 if num is None else num
         try:
             data = tmdb.season(args.tmdb_id, num)
         except TmdbError as e:
             sys.exit(f"Echec de l'appel TMDB (saison {num}) : {e}")
+        report = mkv.Report()
         if args.no_tag:
             print("  episodes non modifies (--no-tag)")
         else:
-            process_season(args.dir, data, args, opts, tmdb)
+            report = process_season(args.dir, data, args, opts, tmdb)
         generate_sidecars(args.dir, args.series_name, show,
                           [season_run(Path(args.dir), num, data, args)], args, tmdb)
+
+    reste = report.epilogue()
+    if reste:
+        print(f"\nA CORRIGER : {reste}.")
+    return report.exit_code
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except TmdbAuthError as e:
         sys.exit(f"TMDB : {e}")

@@ -278,6 +278,36 @@ class Options:
 
 
 @dataclass
+class Report:
+    """Ce qu'un traitement a donne. Additionnable pour totaliser une serie.
+
+    `diffs` et `failures` sont ce qui reste a corriger : ils decident du code de
+    sortie, pour qu'un script sache si le passage s'est bien termine.
+    """
+    matched: int = 0        # fichiers associes a une fiche TMDB
+    total: int = 0          # fichiers vus
+    diffs: int = 0          # fichiers non conformes (--verify)
+    failures: int = 0       # ecritures en echec
+
+    def __add__(self, other):
+        return Report(self.matched + other.matched, self.total + other.total,
+                      self.diffs + other.diffs, self.failures + other.failures)
+
+    @property
+    def exit_code(self):
+        return 1 if (self.diffs or self.failures) else 0
+
+    def epilogue(self):
+        """Ligne finale a afficher quand quelque chose n'est pas passe."""
+        restes = []
+        if self.diffs:
+            restes.append(f"{self.diffs} fichier(s) non conforme(s)")
+        if self.failures:
+            restes.append(f"{self.failures} ecriture(s) en echec")
+        return " ; ".join(restes)
+
+
+@dataclass
 class Target:
     """Etat vise pour un fichier : ce que TMDB dit qu'il devrait contenir."""
     title: str

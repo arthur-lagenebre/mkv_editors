@@ -16,11 +16,18 @@ from pathlib import Path
 # "Saison 1", "Season 02", "S1", "Saison_3"...
 SEASON_RE = re.compile(r"^(?:saison|season|s)[\s_]*0*(\d+)$", re.IGNORECASE)
 
+# Les episodes speciaux sont la saison 0 chez TMDB, mais le dossier porte
+# rarement ce nom : "Specials" est ce que produisent la plupart des outils.
+SPECIALS_RE = re.compile(r"^(?:specials?|hors[\s_-]?series?)$", re.IGNORECASE)
+
 
 def season_number(name):
     """Numero de saison porte par un nom de dossier, ou None."""
-    m = SEASON_RE.match(Path(name).stem)
-    return int(m.group(1)) if m else None
+    stem = Path(name).stem
+    m = SEASON_RE.match(stem)
+    if m:
+        return int(m.group(1))
+    return 0 if SPECIALS_RE.match(stem) else None
 
 
 def find_seasons(root):
