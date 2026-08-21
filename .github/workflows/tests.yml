@@ -4,10 +4,10 @@
 # sont simules.
 name: Tests
 
-on:
-  push:
-    branches: [main]
-  pull_request:
+# Sur toutes les branches, pas seulement main : le retour arrive au moment de la
+# poussee, pas au moment de l'ouverture de la PR. Une seule execution par
+# poussee - ajouter pull_request en doublerait le nombre, factures sur un depot prive.
+on: push
 
 jobs:
   unittest:
