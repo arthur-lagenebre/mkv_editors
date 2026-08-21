@@ -81,7 +81,12 @@ class TestCache(CacheTestCase):
         self.assertEqual(len(list(self.dossier.glob("*.json"))), 1)
 
     def test_ecriture_impossible_sans_consequence(self):
-        c = cache.Cache(Path("Z:/inexistant/mkv_editors"))
+        # Un fichier a la place du dossier parent : la creation echouera, sur
+        # n'importe quel systeme. ("Z:/inexistant" n'etait absolu que sous Windows -
+        # ailleurs, c'etait un chemin relatif que le test creait sans probleme.)
+        bloqueur = Path(self._tmp.name) / "bloqueur"
+        bloqueur.write_text("je ne suis pas un dossier", encoding="utf-8")
+        c = cache.Cache(bloqueur / "tmdb")
         c.put("k", {"a": 1})                       # ne doit rien lever
         self.assertIsNone(c.get("k"))
 
