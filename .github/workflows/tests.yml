@@ -1,4 +1,4 @@
-# Les tests tournent a chaque poussee et sur chaque PR.
+# Les tests tournent a chaque poussee, sur toutes les branches.
 # Ils ne touchent ni au reseau ni a TMDB : aucun secret n'est necessaire, et
 # MKVToolNix / FFmpeg ne sont pas installes ici - les appels aux outils externes
 # sont simules.
