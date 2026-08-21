@@ -1,0 +1,32 @@
+# Les tests tournent a chaque poussee et sur chaque PR.
+# Ils ne touchent ni au reseau ni a TMDB : aucun secret n'est necessaire, et
+# MKVToolNix / FFmpeg ne sont pas installes ici - les appels aux outils externes
+# sont simules.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unittest:
+    # Le depot vise Windows, mais rien dans les tests ne devrait en dependre :
+    # les deux systemes sont couverts pour que ca reste vrai.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python: ["3.10", "3.13"]      # le minimum annonce, et une version recente
+
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Tests
+        run: python -m unittest discover -s tests -t . -v

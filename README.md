@@ -1,5 +1,7 @@
 # mkv_editors
 
+[![Tests](https://github.com/arthur-lagenebre/mkv_editors/actions/workflows/tests.yml/badge.svg)](https://github.com/arthur-lagenebre/mkv_editors/actions/workflows/tests.yml)
+
 Outils personnels pour étiqueter une médiathèque à partir de [TMDB](https://www.themoviedb.org),
 en français : les métadonnées sont écrites **directement dans les `.mkv`** (sans ré-encodage ni
 remux, c'est quasi instantané), pour que chaque fichier reste autonome.
@@ -115,6 +117,9 @@ désactivent chacun une catégorie d'écriture. `--help` liste le reste.
 ```powershell
 python -m unittest discover -s tests -t .
 ```
+
+Ils tournent aussi sur chaque push et chaque PR (Windows et Linux, Python 3.10 et 3.13) via
+[GitHub Actions](.github/workflows/tests.yml).
 
 Ils couvrent la partie qui casse en silence — analyse des noms, tags produits, comparaison à
 l'état visé, erreurs TMDB, cas tordus du renommage — sans réseau ni outil externe.
