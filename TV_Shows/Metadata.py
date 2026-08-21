@@ -50,6 +50,7 @@ L'identifiant TMDB peut etre epingle dans le nom du dossier de la serie, sous la
 Options principales :
   --tmdb-id STR    identifiant TMDB (defaut : recherche sur le nom du dossier)
   --language STR   langue TMDB (defaut : fr-FR)
+  --no-cache       ignore le cache des reponses TMDB (garde 7 jours) et le rafraichit
   --series-name STR  force le nom de serie (sinon auto depuis TMDB)
   --apply          applique reellement (defaut : simulation)
   --verify         verifie seulement (aucune ecriture)
@@ -71,7 +72,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
-from mkvlib import artwork, cli, embed, lookup, mkv, naming       # noqa: E402
+from mkvlib import artwork, cache, cli, embed, lookup, mkv, naming  # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 
 # ============================================================================
@@ -397,6 +398,8 @@ def parse_args():
     ap.add_argument("--tmdb-id", help="Identifiant TMDB de la serie "
                     "(par defaut : recherche sur le nom du dossier)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="Ignore le cache des reponses TMDB et le rafraichit")
     ap.add_argument("--series-name", help="Force le nom de serie (sinon recupere automatiquement de TMDB)")
     # --- Ce qu'on ecrit ---
     ap.add_argument("--apply", action="store_true", help="Applique reellement (defaut : simulation)")
@@ -428,7 +431,8 @@ def main():
     cli.setup_console()
     args.probe = mkv.check_tools(needs_mkvtoolnix=not args.no_tag)
     opts = mkv.Options.from_args(args)
-    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="tag_mkv/1.0")
+    tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="tag_mkv/1.0",
+                cache=cache.Cache(read=not args.no_cache))
 
     # La banniere d'abord : la recherche de serie s'affiche dessous, pas avant.
     print(f"=== {cli.mode_label(args)} ===")
