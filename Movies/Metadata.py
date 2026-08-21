@@ -81,10 +81,6 @@ class MovieFolder:
     files: list
     rawname: str
 
-    @property
-    def main(self):
-        return self.files[0]
-
 
 def movie_parts(mkvs):
     """Les .mkv qui composent le film, du plus gros au plus petit.
@@ -194,7 +190,7 @@ def process_file(path, movie, args, opts, tmdb):
     return 0, (1 if code else 0)
 
 
-def process_movie(entry, movie, args, opts, tmdb, foldered):
+def process_movie(entry, movie, args, opts, tmdb):
     """Traite tous les fichiers d'un film et retourne son Report.
 
     Un film peut occuper plusieurs fichiers : chacun recoit les memes metadonnees,
@@ -208,13 +204,17 @@ def process_movie(entry, movie, args, opts, tmdb, foldered):
         report.diffs += diffs
         report.failures += failures
 
-    if args.artwork and foldered:
-        poster = artwork.english_poster(
-            lambda: tmdb.movie(movie["id"], artwork.ARTWORK_LANG),
-            movie.get("poster_path"))
-        print(f"      affiche (EN) : "
-              f"{artwork.write_poster(poster, entry.folder, args.apply, tmdb)}")
     return report
+
+
+def write_artwork(entry, movie, args, tmdb):
+    """Ecrit folder.jpg a cote du film. Appele meme sous --no-tag, qui ne doit
+    empecher que la modification des .mkv, pas la generation des annexes."""
+    poster = artwork.english_poster(
+        lambda: tmdb.movie(movie["id"], artwork.ARTWORK_LANG),
+        movie.get("poster_path"))
+    apply = args.apply and not args.verify
+    print(f"      affiche (EN) : {artwork.write_poster(poster, entry.folder, apply, tmdb)}")
 
 
 def resolve_movie(rawname, args, tmdb, single):
@@ -492,7 +492,9 @@ def main():
             print("      film non modifie (--no-tag)")
             report += mkv.Report(matched=1, total=1)
         else:
-            report += process_movie(entry, movie, args, opts, tmdb, foldered)
+            report += process_movie(entry, movie, args, opts, tmdb)
+        if args.artwork and foldered:
+            write_artwork(entry, movie, args, tmdb)
         print()
 
     print(f"TOTAL : {report.matched}/{report.total} film(s) associe(s).")
