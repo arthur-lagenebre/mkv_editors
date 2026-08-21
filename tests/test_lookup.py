@@ -122,5 +122,35 @@ class TestResolutionDeLaSerie(unittest.TestCase):
         self.assertIn("Echec de la recherche", sortie)
 
 
+class TestIdEpingle(unittest.TestCase):
+    def resoudre(self, dossier, saison=None, forced=None):
+        tmdb = FauxTmdb([{"id": 1, "name": "Cherche"}])
+        sortie = io.StringIO()
+        with tempfile.TemporaryDirectory() as d:
+            chemin = Path(d) / dossier
+            (chemin / saison if saison else chemin).mkdir(parents=True)
+            with redirect_stdout(sortie):
+                resultat = lookup.resolve_show_id(
+                    tmdb, chemin / saison if saison else chemin, forced)
+        return resultat, tmdb.appels, sortie.getvalue()
+
+    def test_id_du_nom_evite_la_recherche(self):
+        ident, appels, sortie = self.resoudre("Ma Serie [tmdbid-1396]")
+        self.assertEqual(ident, "1396")
+        self.assertEqual(appels, [])
+        self.assertIn("epingle", sortie)
+
+    def test_id_repris_depuis_le_dossier_parent(self):
+        ident, appels, _ = self.resoudre("Ma Serie [tmdbid-1396]", saison="Saison 2")
+        self.assertEqual((ident, appels), ("1396", []))
+
+    def test_option_prioritaire_sur_le_nom(self):
+        ident, _, _ = self.resoudre("Ma Serie [tmdbid-1396]", forced="999")
+        self.assertEqual(ident, "999")
+
+    def test_marqueur_retire_de_la_recherche(self):
+        self.assertEqual(lookup.series_query(Path("Ma Serie [tmdbid-1396]"))[0], "Ma Serie")
+
+
 if __name__ == "__main__":
     unittest.main()

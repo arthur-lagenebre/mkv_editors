@@ -95,7 +95,6 @@ class TestNomsEcrits(unittest.TestCase):
         self.assertEqual(naming.fr_date("pas une date"), "pas une date")
 
 
-
 class TestAssociation(unittest.TestCase):
     EPISODES = [{"episode_number": 1, "name": "Le debut"},
                 {"episode_number": 2, "name": "Warhammer 40,000 : et ils marcheront"}]
@@ -143,5 +142,48 @@ class TestInventaire(unittest.TestCase):
 
     def test_dossier_vide(self):
         self.assertEqual(self.inventaire(), set())
+
+
+class TestSpeciaux(unittest.TestCase):
+    def test_dossiers_de_speciaux_valent_la_saison_zero(self):
+        # TMDB range les episodes speciaux en saison 0, mais le dossier
+        # s'appelle rarement "Saison 0".
+        for nom in ("Specials", "Special", "specials", "Hors-serie", "Hors series"):
+            with self.subTest(nom=nom):
+                self.assertEqual(naming.season_number(nom), 0)
+
+    def test_dossiers_annexes_non_confondus(self):
+        # "Bonus" contient des making-of, pas des episodes TMDB.
+        for nom in ("Bonus", "Making of", "Extras"):
+            with self.subTest(nom=nom):
+                self.assertIsNone(naming.season_number(nom))
+
+    def test_specials_trie_avant_la_saison_un(self):
+        with tempfile.TemporaryDirectory() as d:
+            for nom in ("Saison 1", "Specials"):
+                (Path(d) / nom).mkdir()
+            self.assertEqual([n for _, n in naming.find_seasons(d)], [0, 1])
+
+
+class TestIdEpingle(unittest.TestCase):
+    def test_forme_jellyfin(self):
+        self.assertEqual(naming.extract_tmdb_id("Dune (2021) [tmdbid-438631]"),
+                         ("438631", "Dune (2021)"))
+
+    def test_forme_kodi(self):
+        self.assertEqual(naming.extract_tmdb_id("Dune {tmdb-438631}"), ("438631", "Dune"))
+
+    def test_casse_indifferente(self):
+        self.assertEqual(naming.extract_tmdb_id("Ma Serie [TMDBID-1396]")[0], "1396")
+
+    def test_sans_marqueur(self):
+        self.assertEqual(naming.extract_tmdb_id("Dune (2021)"), (None, "Dune (2021)"))
+
+    def test_marqueur_retire_avant_l_analyse_du_titre(self):
+        # Sans nettoyage, "tmdbid 438631" se retrouverait dans la recherche.
+        _, nom = naming.extract_tmdb_id("Dune (2021) [tmdbid-438631]")
+        self.assertEqual(naming.parse_title_year(nom), ("Dune", "2021", None))
+
+
 if __name__ == "__main__":
     unittest.main()

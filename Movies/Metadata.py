@@ -27,6 +27,8 @@ Structure attendue : soit un sous-dossier par film (les .mkv dedans), soit des .
 dans --dir. Le titre et l'annee sont lus dans le nom (dossier ou fichier), ex. "Inception (2010)".
 Un prefixe d'ordre de saga "{n} - " est detecte et retire pour la recherche ("1 - Iron Man"
 -> recherche "Iron Man") ; l'ordre est inscrit comme numero dans la collection (tag PART_NUMBER).
+Si la recherche se trompe sur un titre, epingle l'identifiant dans le nom du dossier -
+"Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - il sera respecte a chaque passage.
 
 Usage :
   python Metadata.py --dir "D:\Films"                         # simulation (n'ecrit rien)
@@ -124,18 +126,22 @@ def movie_target(movie, opts):
 # 3. Traitement d'un film
 # ----------------------------------------------------------------------------
 def process_movie(folder, path, movie, args, opts, tmdb, foldered):
-    info = mkv.identify(path)
-    if info and args.probe:
-        mkv.annotate_bitrates(info, path)      # debits pour le nom des pistes
+    """Traite un film et retourne son Report."""
+    report = mkv.Report(matched=1, total=1)
+    info, _, note = mkv.inspect(path, args.probe)   # debits compris, pour le nom des pistes
+    if note:
+        print(f"      {note}")
     target = movie_target(movie, opts)
 
     if args.verify:
         diffs = [(lbl, det) for lbl, ok, det in mkv.verify(info, target, opts) if not ok]
         for lbl, det in diffs:
             print(f"      [DIFF] {lbl} : actuel = {det!r}")
-        if not diffs:
+        if diffs:
+            report.diffs = 1
+        else:
             print("      [OK] deja conforme")
-        return
+        return report
 
     if opts.date and target.date:
         origine = (f" (sortie {movie['_date_region']})" if movie.get("_date_region")
@@ -149,6 +155,8 @@ def process_movie(folder, path, movie, args, opts, tmdb, foldered):
             print("      [SKIP] deja a jour")
         else:
             code, msg = mkv.write(path, info, target, opts, tmdb)
+            if code:
+                report.failures = 1
             print(f"      [{'OK' if code == 0 else 'ECHEC'}]" + (f" {msg}" if code else ""))
 
     if args.artwork and foldered:
@@ -156,13 +164,17 @@ def process_movie(folder, path, movie, args, opts, tmdb, foldered):
             lambda: tmdb.movie(movie["id"], artwork.ARTWORK_LANG),
             movie.get("poster_path"))
         print(f"      affiche (EN) : {artwork.write_poster(poster, folder, args.apply, tmdb)}")
+    return report
 
 
 def resolve_movie(rawname, args, tmdb, single):
     """Trouve le film TMDB correspondant a un nom de dossier/fichier, ou None."""
+    pinned, rawname = naming.extract_tmdb_id(rawname)
     title, year, order = naming.parse_title_year(rawname)
     if args.tmdb_id and single:
         movie_id = args.tmdb_id
+    elif pinned:
+        movie_id = pinned          # annonce plus bas, une fois le titre connu
     else:
         try:
             results = tmdb.search_movie(title, year)
@@ -188,6 +200,8 @@ def resolve_movie(rawname, args, tmdb, single):
     except TmdbError as e:
         print(f"  echec details TMDB : {e}\n")
         return None
+    if pinned and movie_id == pinned:
+        print(f"  id epingle dans le nom : {lookup.describe(movie)}")
     movie["_order"] = order
 
     # Sortie nationale (fr-FR -> FR) : sans ca, TMDB donne la sortie d'origine.
@@ -413,26 +427,32 @@ def main():
     if args.artwork and not foldered:
         print("Note : --artwork sans effet ici (les .mkv sont a plat, pas un dossier par film).\n")
 
-    resolved = []
+    report, resolved = mkv.Report(), []
     for folder, path, rawname in movies:
         print(f"--- {path.name} ---")
         movie = resolve_movie(rawname, args, tmdb, single=len(movies) == 1)
         if movie is None:
+            report += mkv.Report(total=1)
             continue
         resolved.append(movie)
         if args.no_tag:
             print("      film non modifie (--no-tag)")
+            report += mkv.Report(matched=1, total=1)
         else:
-            process_movie(folder, path, movie, args, opts, tmdb, foldered)
+            report += process_movie(folder, path, movie, args, opts, tmdb, foldered)
         print()
 
-    print(f"TOTAL : {len(resolved)}/{len(movies)} film(s) associe(s).")
+    print(f"TOTAL : {report.matched}/{report.total} film(s) associe(s).")
     if args.recap and resolved:
         write_recap(args.dir, resolved, args, tmdb)
+    reste = report.epilogue()
+    if reste:
+        print(f"\nA CORRIGER : {reste}.")
+    return report.exit_code
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except TmdbAuthError as e:
         sys.exit(f"TMDB : {e}")

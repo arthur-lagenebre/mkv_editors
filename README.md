@@ -80,7 +80,9 @@ elle, en conservant ce qui suit le nom : `S01E02.fr.forced.srt` → `02 - Titre.
 La série est identifiée par une recherche TMDB sur le nom du dossier (celui du parent si `--dir`
 pointe sur une saison) : le résultat retenu est affiché, et les cas douteux — reboot portant le
 même nom, titre éloigné de la recherche — sont signalés. `--tmdb-id 1234` force l'identifiant
-quand la recherche se trompe ou ne trouve rien.
+quand la recherche se trompe ou ne trouve rien — et pour que ce soit **durable**, écris-le dans
+le nom du dossier : `Ma Serie [tmdbid-1396]` (ou `{tmdb-1396}`). Même chose côté films :
+`Dune (2021) [tmdbid-438631]`.
 
 `--recap` produit un `recap.html` unique (onglets par saison, vignettes encodées dans la page :
 rien à conserver à côté). Les épisodes absents du disque y sont grisés et étiquetés, avec un
@@ -89,7 +91,14 @@ confondus, donc il reste juste même avec `--no-tag`. `--artwork` écrit les `fo
 chaque saison. `--no-tag` génère ces annexes sans toucher aux épisodes, pour une série qui n'est
 pas en `.mkv`.
 
+Un dossier `Specials` (ou `Hors-serie`) est traité comme la saison 0 de TMDB, où vivent les
+épisodes spéciaux.
+
 ### Options communes
+
+Les deux `Metadata.py` sortent en **code 1** s'il reste quelque chose à corriger — fichiers non
+conformes en `--verify`, écritures en échec en `--apply` — et le résument en dernière ligne, de
+quoi les enchaîner dans un script.
 
 `--skip-done` saute ce qui est déjà conforme, `--language` change la langue TMDB (défaut `fr-FR` ;
 c'est elle qui détermine le pays de la date de sortie retenue pour les films), et les `--no-*`

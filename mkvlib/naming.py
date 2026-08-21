@@ -16,11 +16,18 @@ from pathlib import Path
 # "Saison 1", "Season 02", "S1", "Saison_3"...
 SEASON_RE = re.compile(r"^(?:saison|season|s)[\s_]*0*(\d+)$", re.IGNORECASE)
 
+# Les episodes speciaux sont la saison 0 chez TMDB, mais le dossier porte
+# rarement ce nom : "Specials" est ce que produisent la plupart des outils.
+SPECIALS_RE = re.compile(r"^(?:specials?|hors[\s_-]?series?)$", re.IGNORECASE)
+
 
 def season_number(name):
     """Numero de saison porte par un nom de dossier, ou None."""
-    m = SEASON_RE.match(Path(name).stem)
-    return int(m.group(1)) if m else None
+    stem = Path(name).stem
+    m = SEASON_RE.match(stem)
+    if m:
+        return int(m.group(1))
+    return 0 if SPECIALS_RE.match(stem) else None
 
 
 def find_seasons(root):
@@ -138,6 +145,25 @@ def parse_title_year(name):
 # --------------------------------------------------------------------------
 # Ecriture de noms
 # --------------------------------------------------------------------------
+# Identifiant TMDB epingle dans un nom de dossier ou de fichier. Les deux formes
+# repandues sont acceptees : "[tmdbid-27205]" (Jellyfin) et "{tmdb-27205}" (Kodi).
+TMDB_ID_RE = re.compile(r"[\[{]\s*tmdb(?:id)?[-=\s]\s*(\d+)\s*[\]}]", re.IGNORECASE)
+
+
+def extract_tmdb_id(name):
+    """(id epingle, nom debarrasse du marqueur). (None, nom) s'il n'y en a pas.
+
+    Ecrire l'identifiant dans le nom du dossier est le seul moyen de corriger
+    DURABLEMENT une recherche qui se trompe : il vaut pour tous les passages
+    suivants, sans avoir a relancer ce titre a part.
+    """
+    m = TMDB_ID_RE.search(name)
+    if not m:
+        return None, name
+    reste = (name[:m.start()] + " " + name[m.end():])
+    return m.group(1), re.sub(r"\s+", " ", reste).strip(" -")
+
+
 def safe_name(s):
     """Nettoie un titre pour en faire un nom de fichier valide sous Windows."""
     s = re.sub(r'[<>:"/\\|?*]', "", s or "")

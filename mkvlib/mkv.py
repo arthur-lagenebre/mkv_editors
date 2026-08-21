@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -64,23 +65,19 @@ def check_tools(needs_mkvtoolnix=True):
 
 
 def identify(path):
-    """JSON de 'mkvmerge -J' (pistes + pieces jointes), ou None si illisible."""
+    """(JSON de 'mkvmerge -J', remarque). L'info est None si le fichier est illisible.
+
+    Rien n'est affiche ici : la remarque est rendue a l'appelant, qui l'imprime
+    au bon endroit. C'est ce qui permet de lire plusieurs fichiers en parallele
+    sans entrelacer les messages.
+    """
     try:
         out = run_tool(["mkvmerge", "-J", str(path)], check=True).stdout
         if not out:
-            print("      lecture impossible par mkvmerge (sortie vide)")
-            return None
-        return json.loads(out)
+            return None, "lecture impossible par mkvmerge (sortie vide)"
+        return json.loads(out), ""
     except TOOL_FAILURES as e:
-        print(f"      lecture impossible par mkvmerge ({_reason(e)})")
-        return None
-
-
-@dataclass
-class Probe:
-    """Ce que ffprobe nous apprend d'un fichier."""
-    duration_min: float | None = None
-    audio_bitrates: dict = field(default_factory=dict)   # {index audio 1-based: kb/s}
+        return None, f"lecture impossible par mkvmerge ({_reason(e)})"
 
 
 def probe(path):
@@ -128,6 +125,36 @@ def annotate_bitrates(info, path):
             if index in result.audio_bitrates:
                 tr["_bitrate_kbps"] = result.audio_bitrates[index]
     return result
+
+
+READ_WORKERS = 8      # lectures simultanees : c'est de l'attente de sous-processus
+
+
+def inspect(path, with_probe=True):
+    """(info, probe, remarque) pour un fichier. Sans affichage : appelable en parallele."""
+    info, note = identify(path)
+    probe = annotate_bitrates(info, path) if (info and with_probe) else Probe()
+    return info, probe, note
+
+
+def inspect_all(paths, with_probe=True, workers=READ_WORKERS):
+    """{chemin: (info, probe, remarque)} pour plusieurs fichiers, lus en parallele.
+
+    Chaque fichier coute deux sous-processus (mkvmerge puis ffprobe) qu'on passe
+    son temps a attendre : une saison entiere se lit en un seul de ces delais.
+    """
+    paths = list(paths)
+    if len(paths) < 2:
+        return {p: inspect(p, with_probe) for p in paths}
+    with ThreadPoolExecutor(max_workers=min(workers, len(paths))) as pool:
+        return dict(zip(paths, pool.map(lambda p: inspect(p, with_probe), paths)))
+
+
+@dataclass
+class Probe:
+    """Ce que ffprobe nous apprend d'un fichier."""
+    duration_min: float | None = None
+    audio_bitrates: dict = field(default_factory=dict)   # {index audio 1-based: kb/s}
 
 
 # --------------------------------------------------------------------------
@@ -275,6 +302,36 @@ class Options:
                    flags=not args.no_flags,
                    stats=not args.no_stats,
                    image_size=args.image_size)
+
+
+@dataclass
+class Report:
+    """Ce qu'un traitement a donne. Additionnable pour totaliser une serie.
+
+    `diffs` et `failures` sont ce qui reste a corriger : ils decident du code de
+    sortie, pour qu'un script sache si le passage s'est bien termine.
+    """
+    matched: int = 0        # fichiers associes a une fiche TMDB
+    total: int = 0          # fichiers vus
+    diffs: int = 0          # fichiers non conformes (--verify)
+    failures: int = 0       # ecritures en echec
+
+    def __add__(self, other):
+        return Report(self.matched + other.matched, self.total + other.total,
+                      self.diffs + other.diffs, self.failures + other.failures)
+
+    @property
+    def exit_code(self):
+        return 1 if (self.diffs or self.failures) else 0
+
+    def epilogue(self):
+        """Ligne finale a afficher quand quelque chose n'est pas passe."""
+        restes = []
+        if self.diffs:
+            restes.append(f"{self.diffs} fichier(s) non conforme(s)")
+        if self.failures:
+            restes.append(f"{self.failures} ecriture(s) en echec")
+        return " ; ".join(restes)
 
 
 @dataclass

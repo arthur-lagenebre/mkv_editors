@@ -42,15 +42,15 @@ class TestPlanDeSaison(unittest.TestCase):
         # Regression : le retour a 2 valeurs contre 3 attendues faisait planter main().
         with tempfile.TemporaryDirectory() as d:
             resultat, sortie = self.process(Path(d))
-        self.assertEqual(resultat, (0, 0))
+        self.assertEqual(resultat, mkv.Report())
         self.assertIn("Aucun .mkv", sortie)
 
     def test_fichier_illisible_reste_non_bloquant(self):
         # mkvmerge refusera ce faux .mkv : le script doit le dire et continuer.
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "01 - x.mkv").write_text("pas un vrai mkv", encoding="utf-8")
-            (matched, total), sortie = self.process(Path(d))
-        self.assertEqual((matched, total), (1, 1))
+            report, sortie = self.process(Path(d))
+        self.assertEqual((report.matched, report.total), (1, 1))
         self.assertIn("[S01E01]", sortie)
 
 
@@ -137,7 +137,6 @@ class TestFilms(unittest.TestCase):
         movie = {"title": "Heat", "credits": {}}
         root = ElementTree.fromstring(films.build_movie_tags_xml(movie))
         self.assertEqual([n.text for n in root.findall("./Tag/Targets/TargetTypeValue")], ["50"])
-
 
 
 class TestRecap(unittest.TestCase):

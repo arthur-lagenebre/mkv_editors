@@ -51,8 +51,17 @@ def series_query(directory):
     path = Path(directory).resolve()
     if naming.season_number(path.name) is not None:
         path = path.parent
-    title, year, _ = naming.parse_title_year(path.name)
+    _, nom = naming.extract_tmdb_id(path.name)
+    title, year, _ = naming.parse_title_year(nom)
     return title, year
+
+
+def pinned_show_id(directory):
+    """Id TMDB epingle dans le nom du dossier de la serie, ou None."""
+    path = Path(directory).resolve()
+    if naming.season_number(path.name) is not None:
+        path = path.parent
+    return naming.extract_tmdb_id(path.name)[0]
 
 
 def resolve_show_id(tmdb, directory, forced=None):
@@ -60,6 +69,10 @@ def resolve_show_id(tmdb, directory, forced=None):
     le nom du dossier. Retourne None (en expliquant) si rien ne correspond."""
     if forced:
         return forced
+    pinned = pinned_show_id(directory)
+    if pinned:
+        print(f"id epingle dans le nom du dossier : {pinned}")
+        return pinned
     title, year = series_query(directory)
     if not title:
         print("Nom de dossier inexploitable pour une recherche TMDB.")

@@ -113,8 +113,6 @@ class TestVerification(unittest.TestCase):
                          (False, False, False, "w300"))
 
 
-
-
 class TestOutilsExternes(unittest.TestCase):
     """Comment la sortie de mkvmerge et de ffprobe est lue."""
 
@@ -140,9 +138,10 @@ class TestOutilsExternes(unittest.TestCase):
         # C'est ainsi que se manifeste un echec de decodage : stdout a None,
         # code de retour 0, aucune exception.
         faux = self._faux_run(None, None)
-        with mock.patch.object(mkv.subprocess, "run", faux), \
-             redirect_stdout(io.StringIO()):
-            self.assertIsNone(mkv.identify("film.mkv"))
+        with mock.patch.object(mkv.subprocess, "run", faux):
+            info, note = mkv.identify("film.mkv")
+            self.assertIsNone(info)
+            self.assertIn("sortie vide", note)
             self.assertEqual(mkv.probe("film.mkv"), mkv.Probe())
 
     def test_json_inattendu_ignore(self):
@@ -157,6 +156,56 @@ class TestOutilsExternes(unittest.TestCase):
         with mock.patch.object(mkv.subprocess, "run", faux):
             code, msg = mkv.write("film.mkv", {"tracks": []}, target, opts, None)
         self.assertEqual((code, msg), (0, ""))
+
+
+class TestReport(unittest.TestCase):
+    def test_addition(self):
+        total = mkv.Report(1, 1) + mkv.Report(2, 3, diffs=1) + mkv.Report(failures=2)
+        self.assertEqual((total.matched, total.total, total.diffs, total.failures),
+                         (3, 4, 1, 2))
+
+    def test_code_de_sortie_nul_quand_tout_va_bien(self):
+        self.assertEqual(mkv.Report(matched=5, total=5).exit_code, 0)
+
+    def test_code_de_sortie_non_nul(self):
+        # --verify doit pouvoir servir dans un script.
+        self.assertEqual(mkv.Report(diffs=1).exit_code, 1)
+        self.assertEqual(mkv.Report(failures=1).exit_code, 1)
+
+    def test_epilogue(self):
+        self.assertEqual(mkv.Report().epilogue(), "")
+        self.assertEqual(mkv.Report(diffs=2).epilogue(), "2 fichier(s) non conforme(s)")
+        self.assertEqual(mkv.Report(diffs=1, failures=3).epilogue(),
+                         "1 fichier(s) non conforme(s) ; 3 ecriture(s) en echec")
+
+
+class TestLectureParallele(unittest.TestCase):
+    def test_inspect_rend_info_probe_et_remarque(self):
+        faux = TestOutilsExternes._faux_run('{"tracks": []}')
+        with mock.patch.object(mkv.subprocess, "run", faux):
+            info, probe, note = mkv.inspect("film.mkv", with_probe=False)
+        self.assertEqual((info, note), ({"tracks": []}, ""))
+        self.assertEqual(probe, mkv.Probe())
+
+    def test_inspect_all_couvre_tous_les_fichiers(self):
+        faux = TestOutilsExternes._faux_run('{"tracks": []}')
+        fichiers = [f"e{n}.mkv" for n in range(5)]
+        with mock.patch.object(mkv.subprocess, "run", faux):
+            lectures = mkv.inspect_all(fichiers, with_probe=False)
+        self.assertEqual(sorted(lectures), sorted(fichiers))
+        self.assertTrue(all(info == {"tracks": []} for info, _, _ in lectures.values()))
+
+    def test_inspect_all_sans_fichier(self):
+        self.assertEqual(mkv.inspect_all([]), {})
+
+    def test_remarques_rendues_et_non_imprimees(self):
+        # C'est ce qui rend la lecture parallelisable sans entrelacer l'affichage.
+        faux = TestOutilsExternes._faux_run(None, None)
+        sortie = io.StringIO()
+        with mock.patch.object(mkv.subprocess, "run", faux), redirect_stdout(sortie):
+            _, _, note = mkv.inspect("film.mkv")
+        self.assertNotEqual(note, "")
+        self.assertEqual(sortie.getvalue(), "")
 
 
 if __name__ == "__main__":

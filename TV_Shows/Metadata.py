@@ -43,7 +43,9 @@ Usage — pointe --dir sur la RACINE de la serie (dossiers "Saison N") :
 
 Structure attendue : un sous-dossier "Saison N" par saison (les .mkv dedans), chaque .mkv
 prefixe par son numero d'episode ("01 - ...", "05 - ..."). Si --dir pointe directement sur
-un dossier de saison, seule celle-ci est traitee.
+un dossier de saison, seule celle-ci est traitee. Un dossier "Specials" vaut la saison 0.
+L'identifiant TMDB peut etre epingle dans le nom du dossier de la serie, sous la forme
+"Ma Serie [tmdbid-1396]" : plus besoin de --tmdb-id aux passages suivants.
 
 Options principales :
   --tmdb-id STR    identifiant TMDB (defaut : recherche sur le nom du dossier)
@@ -147,73 +149,96 @@ def season_run(folder, number, data, args):
     return SeasonRun(Path(folder), number, data, owned)
 
 
+@dataclass
+class Candidate:
+    """Un .mkv du dossier, confronte aux donnees TMDB."""
+    path: Path
+    episode: dict | None = None
+    method: str = ""
+    notes: list = field(default_factory=list)   # remarques a afficher sous le fichier
+    info: dict | None = None
+
+
 def build_plan(mkv_dir, season, args, opts):
-    """[(fichier, episode|None, methode, avertissement, info_mkvmerge|None), ...]"""
+    """[Candidate, ...] pour les .mkv du dossier, dans l'ordre des noms.
+
+    Les fichiers associes sont lus en parallele : chacun coute deux
+    sous-processus qu'on ne fait qu'attendre.
+    """
     episodes = season.get("episodes", [])
     by_num = {e.get("episode_number"): e for e in episodes}
     plan = []
     for f in sorted(Path(mkv_dir).glob("*.mkv")):
         f = f.resolve()
         ep, method = naming.match_episode(f.name, episodes, args.match_threshold, by_num)
+        plan.append(Candidate(f, ep, method))
 
-        warn, info = "", None
-        if ep:
-            info = mkv.identify(f)              # pistes + pieces jointes (lecture seule)
-            if info and args.probe:
-                probe = mkv.annotate_bitrates(info, f)   # debits pour le nom des pistes
-                dmin, runtime = probe.duration_min, ep.get("runtime")
-                if dmin and runtime and abs(dmin - runtime) > 3:
-                    warn = f"duree {dmin:.0f}min vs {runtime}min attendues -> a verifier"
-        plan.append((f, ep, method, warn, info))
+    lectures = mkv.inspect_all([c.path for c in plan if c.episode], args.probe)
+    for candidate in plan:
+        lecture = lectures.get(candidate.path)
+        if lecture is None:
+            continue
+        candidate.info, probe, note = lecture
+        if note:
+            candidate.notes.append(note)
+        dmin, runtime = probe.duration_min, candidate.episode.get("runtime")
+        if dmin and runtime and abs(dmin - runtime) > 3:
+            candidate.notes.append(
+                f"duree {dmin:.0f}min vs {runtime}min attendues -> a verifier")
     return plan
 
 
 def process_season(mkv_dir, season, args, opts, tmdb):
     """Construit le plan d'une saison, l'affiche, et applique si --apply.
-    Retourne (nb_associes, nb_fichiers)."""
+    Retourne le Report de la saison."""
     plan = build_plan(mkv_dir, season, args, opts)
     if not plan:
         print(f"  Aucun .mkv dans {mkv_dir}")
-        return 0, 0
+        return mkv.Report()
 
-    matched = 0
-    for f, ep, method, warn, info in plan:
-        if ep is None:
-            print(f"  [NON ASSOCIE] {f.name}")
+    report = mkv.Report(total=len(plan))
+    for c in plan:
+        if c.episode is None:
+            print(f"  [NON ASSOCIE] {c.path.name}")
             continue
-        matched += 1
-        sn, en = season.get("season_number", 1), ep.get("episode_number", 0)
-        print(f"  [S{sn:02d}E{en:02d}] {f.name}")
-        print(f"            -> {ep.get('name', '')}   ({method})")
-        if warn:
-            print(f"            /!\\ {warn}")
-        target = episode_target(season, ep, args.series_name, opts)
+        report.matched += 1
+        sn, en = season.get("season_number", 1), c.episode.get("episode_number", 0)
+        print(f"  [S{sn:02d}E{en:02d}] {c.path.name}")
+        print(f"            -> {c.episode.get('name', '')}   ({c.method})")
+        for note in c.notes:
+            print(f"            /!\\ {note}")
+        target = episode_target(season, c.episode, args.series_name, opts)
         if args.verify:                     # mode verification : etat actuel vs vise
-            diffs = [(lbl, det) for lbl, ok, det in mkv.verify(info, target, opts) if not ok]
+            diffs = [(lbl, det) for lbl, ok, det in mkv.verify(c.info, target, opts) if not ok]
             for lbl, det in diffs:
                 print(f"      [DIFF] {lbl} : actuel = {det!r}")
-            if not diffs:
+            if diffs:
+                report.diffs += 1
+            else:
                 print("      [OK] deja conforme")
             continue
         if opts.date and target.date:
             print(f"      date segment -> {target.date}")
-        for line in mkv.track_preview_lines(info, opts):
+        for line in mkv.track_preview_lines(c.info, opts):
             print(line)
 
     if args.apply and not args.verify:
         print("  --- ecriture ---")
-        for f, ep, _, _, info in plan:
-            if ep is None:
+        for c in plan:
+            if c.episode is None:
                 continue
-            target = episode_target(season, ep, args.series_name, opts)
-            if args.skip_done and mkv.is_conform(info, target, opts):
-                print(f"  [SKIP] {f.name} (deja a jour)")
+            target = episode_target(season, c.episode, args.series_name, opts)
+            if args.skip_done and mkv.is_conform(c.info, target, opts):
+                print(f"  [SKIP] {c.path.name} (deja a jour)")
                 continue
-            code, msg = mkv.write(f, info, target, opts, tmdb)
-            print(f"  [{'OK' if code == 0 else 'ECHEC'}] {f.name}" + (f"  -> {msg}" if code else ""))
+            code, msg = mkv.write(c.path, c.info, target, opts, tmdb)
+            if code:
+                report.failures += 1
+            print(f"  [{'OK' if code == 0 else 'ECHEC'}] {c.path.name}"
+                  + (f"  -> {msg}" if code else ""))
 
-    print(f"  => {matched}/{len(plan)} associe(s).")
-    return matched, len(plan)
+    print(f"  => {report.matched}/{report.total} associe(s).")
+    return report
 
 
 # ----------------------------------------------------------------------------
@@ -423,7 +448,7 @@ def main():
     seasons = naming.find_seasons(args.dir)
     if seasons:
         # --- Multi-saisons : --dir est la racine de la serie ---
-        total_m = total_f = 0
+        report = mkv.Report()
         processed = []
         for sub, num in seasons:
             print(f"--- {sub.name}  (TMDB saison {num}) ---")
@@ -435,32 +460,37 @@ def main():
             if args.no_tag:
                 print("  episodes non modifies (--no-tag)")
             else:
-                m, tot = process_season(sub, data, args, opts, tmdb)
-                total_m += m
-                total_f += tot
+                report += process_season(sub, data, args, opts, tmdb)
             processed.append(season_run(sub, num, data, args))
             print()
         if not args.no_tag:
-            print(f"TOTAL : {total_m}/{total_f} fichier(s) associe(s) "
+            print(f"TOTAL : {report.matched}/{report.total} fichier(s) associe(s) "
                   f"sur {len(seasons)} saison(s) detectee(s).")
         generate_sidecars(args.dir, args.series_name, show, processed, args, tmdb)
     else:
         # --- Saison unique : --dir contient directement les .mkv ---
-        num = naming.season_number(Path(args.dir).name) or 1
+        num = naming.season_number(Path(args.dir).name)
+        num = 1 if num is None else num
         try:
             data = tmdb.season(args.tmdb_id, num)
         except TmdbError as e:
             sys.exit(f"Echec de l'appel TMDB (saison {num}) : {e}")
+        report = mkv.Report()
         if args.no_tag:
             print("  episodes non modifies (--no-tag)")
         else:
-            process_season(args.dir, data, args, opts, tmdb)
+            report = process_season(args.dir, data, args, opts, tmdb)
         generate_sidecars(args.dir, args.series_name, show,
                           [season_run(Path(args.dir), num, data, args)], args, tmdb)
+
+    reste = report.epilogue()
+    if reste:
+        print(f"\nA CORRIGER : {reste}.")
+    return report.exit_code
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except TmdbAuthError as e:
         sys.exit(f"TMDB : {e}")
