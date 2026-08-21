@@ -42,6 +42,48 @@ def pick_result(results, query, key="title", date_key="release_date"):
     return best, notes
 
 
+def find_movie(tmdb, rawname):
+    """(fiche TMDB, ordre de saga) pour un nom de dossier ou de fichier.
+
+    Meme priorite que pour les series : identifiant epingle dans le nom d'abord,
+    recherche sur le titre et l'annee ensuite. Affiche ce qui a ete retenu et les
+    doutes. Rend (None, ordre) si rien ne correspond.
+
+    C'est un resultat de RECHERCHE, sans les credits ni les genres : de quoi
+    nommer un dossier. Qui veut les details fait ensuite tmdb.movie(id).
+    """
+    pinned, nom = naming.extract_tmdb_id(rawname)
+    title, year, order = naming.parse_title_year(nom)
+    if pinned:
+        try:
+            film = tmdb.movie(pinned)
+        except TmdbError as e:
+            print(f"  id epingle {pinned} inutilisable : {e}")
+            return None, order
+        print(f"  id epingle dans le nom : {describe(film)}")
+        return film, order
+
+    try:
+        results = tmdb.search_movie(title, year)
+        if not results and year:
+            results = tmdb.search_movie(title, None)
+    except TmdbError as e:
+        print(f"  echec recherche TMDB : {e}")
+        return None, order
+    if not results:
+        print(f"  [NON ASSOCIE] recherche '{title}'"
+              + (f" ({year})" if year else "") + " -> aucun resultat")
+        return None, order
+
+    best, notes = pick_result(results, title)
+    print(f"  recherche : '{title}'" + (f" ({year})" if year else "")
+          + (f" [ordre {order}]" if order else "")
+          + f" -> {describe(best)}")
+    for note in notes:
+        print(f"  /!\\ {note}")
+    return best, order
+
+
 def series_query(directory):
     """(titre, annee) a chercher sur TMDB pour un dossier de serie.
 

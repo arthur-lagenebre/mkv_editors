@@ -6,6 +6,7 @@ depot la plus facile a casser silencieusement, et donc celle qui est testee.
 """
 
 import re
+from dataclasses import dataclass
 from datetime import date
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -45,6 +46,55 @@ def find_seasons(root):
         if num is not None:
             pairs.append((sub, num))
     return sorted(pairs, key=lambda x: x[1])
+
+
+# --------------------------------------------------------------------------
+# Films sur le disque
+# --------------------------------------------------------------------------
+# Part d'un film decoupe en plusieurs fichiers : un CD2 pese a peu pres autant
+# que le CD1, alors qu'une bande-annonce ou un making-of est bien plus leger.
+PART_RATIO = 0.5
+
+
+@dataclass
+class MovieFolder:
+    """Un film sur le disque : son dossier, ses fichiers video, le nom a interpreter."""
+    folder: Path
+    files: list
+    rawname: str
+
+
+def movie_parts(mkvs):
+    """Les .mkv qui composent le film, du plus gros au plus petit.
+
+    Un film peut etre coupe en deux fichiers (CD1/CD2) : n'en etiqueter qu'un
+    laissait l'autre sans metadonnees, sans un mot. On garde donc tout ce qui
+    pese au moins la moitie du plus gros, ce qui ecarte les bandes-annonces et
+    autres bonus poses dans le meme dossier.
+    """
+    tailles = sorted(((f.stat().st_size, f) for f in mkvs), reverse=True,
+                     key=lambda couple: couple[0])
+    if not tailles:
+        return []
+    reference = tailles[0][0]
+    return [f for taille, f in tailles if taille >= reference * PART_RATIO]
+
+
+def find_movies(root):
+    """(films, foldered). films = [MovieFolder, ...].
+    - Sous-dossiers contenant des .mkv -> un film par dossier (nom = dossier).
+    - Sinon, chaque .mkv de --dir -> un film (nom = fichier)."""
+    root = Path(root)
+    if not root.is_dir():
+        return [], False
+    foldered = []
+    for sub in sorted(p for p in root.iterdir() if p.is_dir()):
+        parts = movie_parts(sub.glob("*.mkv"))
+        if parts:
+            foldered.append(MovieFolder(sub, parts, sub.name))
+    if foldered:
+        return foldered, True
+    return [MovieFolder(root, [f], f.stem) for f in sorted(root.glob("*.mkv"))], False
 
 
 # --------------------------------------------------------------------------
