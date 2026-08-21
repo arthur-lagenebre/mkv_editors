@@ -1,5 +1,7 @@
 # mkv_editors
 
+[![Tests](https://github.com/arthur-lagenebre/mkv_editors/actions/workflows/tests.yml/badge.svg)](https://github.com/arthur-lagenebre/mkv_editors/actions/workflows/tests.yml)
+
 Outils personnels pour étiqueter une médiathèque à partir de [TMDB](https://www.themoviedb.org),
 en français : les métadonnées sont écrites **directement dans les `.mkv`** (sans ré-encodage ni
 remux, c'est quasi instantané), pour que chaque fichier reste autonome.
@@ -48,7 +50,9 @@ passé. `--verify` (les deux `Metadata.py`) compare l'état des fichiers à TMDB
 ### Films
 
 Un sous-dossier par film, ou des `.mkv` à plat. Le titre et l'année sont lus dans le nom —
-`Inception (2010)`. Un préfixe d'ordre de saga (`1 - Iron Man`) est reconnu et inscrit comme
+`Inception (2010)`. Un film coupé en plusieurs fichiers (`CD1`/`CD2`) est étiqueté en entier :
+tout `.mkv` pesant au moins la moitié du plus gros du dossier est traité, ce qui laisse de côté
+bandes-annonces et making-of. Un préfixe d'ordre de saga (`1 - Iron Man`) est reconnu et inscrit comme
 numéro dans la collection.
 
 ```powershell
@@ -115,6 +119,9 @@ désactivent chacun une catégorie d'écriture. `--help` liste le reste.
 ```powershell
 python -m unittest discover -s tests -t .
 ```
+
+Ils tournent aussi sur chaque push et chaque PR (Windows et Linux, Python 3.10 et 3.13) via
+[GitHub Actions](.github/workflows/tests.yml).
 
 Ils couvrent la partie qui casse en silence — analyse des noms, tags produits, comparaison à
 l'état visé, erreurs TMDB, cas tordus du renommage — sans réseau ni outil externe.

@@ -25,7 +25,9 @@ d'env TMDB_API_KEY  >  constante TMDB_KEY.
 (Le meme .env sert a tous les scripts du depot : la cle n'est ecrite qu'une fois.)
 
 Structure attendue : soit un sous-dossier par film (les .mkv dedans), soit des .mkv a plat
-dans --dir. Le titre et l'annee sont lus dans le nom (dossier ou fichier), ex. "Inception (2010)".
+dans --dir. Un film coupe en plusieurs fichiers (CD1/CD2) recoit les memes metadonnees
+partout ; les fichiers nettement plus petits du dossier (bande-annonce, making-of) sont
+laisses de cote. Le titre et l'annee sont lus dans le nom (dossier ou fichier), ex. "Inception (2010)".
 Un prefixe d'ordre de saga "{n} - " est detecte et retire pour la recherche ("1 - Iron Man"
 -> recherche "Iron Man") ; l'ordre est inscrit comme numero dans la collection (tag PART_NUMBER).
 Si la recherche se trompe sur un titre, epingle l'identifiant dans le nom du dossier -
@@ -67,8 +69,41 @@ TMDB_KEY = ""
 # ----------------------------------------------------------------------------
 # 1. Detection des films sur le disque
 # ----------------------------------------------------------------------------
+# Part d'un film decoupe en plusieurs fichiers : un CD2 pese a peu pres autant
+# que le CD1, alors qu'une bande-annonce ou un making-of est bien plus leger.
+PART_RATIO = 0.5
+
+
+@dataclass
+class MovieFolder:
+    """Un film sur le disque : son dossier, ses fichiers video, le nom a interpreter."""
+    folder: Path
+    files: list
+    rawname: str
+
+    @property
+    def main(self):
+        return self.files[0]
+
+
+def movie_parts(mkvs):
+    """Les .mkv qui composent le film, du plus gros au plus petit.
+
+    Un film peut etre coupe en deux fichiers (CD1/CD2) : n'en etiqueter qu'un
+    laissait l'autre sans metadonnees, sans un mot. On garde donc tout ce qui
+    pese au moins la moitie du plus gros, ce qui ecarte les bandes-annonces et
+    autres bonus poses dans le meme dossier.
+    """
+    tailles = sorted(((f.stat().st_size, f) for f in mkvs), reverse=True,
+                     key=lambda couple: couple[0])
+    if not tailles:
+        return []
+    reference = tailles[0][0]
+    return [f for taille, f in tailles if taille >= reference * PART_RATIO]
+
+
 def find_movies(root):
-    """(films, foldered). films = [(dossier, mkv_principal, nom_brut), ...].
+    """(films, foldered). films = [MovieFolder, ...].
     - Sous-dossiers contenant des .mkv -> un film par dossier (nom = dossier).
     - Sinon, chaque .mkv de --dir -> un film (nom = fichier)."""
     root = Path(root)
@@ -76,13 +111,12 @@ def find_movies(root):
         return [], False
     foldered = []
     for sub in sorted(p for p in root.iterdir() if p.is_dir()):
-        mkvs = sorted(sub.glob("*.mkv"))
-        if mkvs:
-            main = max(mkvs, key=lambda f: f.stat().st_size)   # le plus gros = le film
-            foldered.append((sub, main, sub.name))
+        parts = movie_parts(sub.glob("*.mkv"))
+        if parts:
+            foldered.append(MovieFolder(sub, parts, sub.name))
     if foldered:
         return foldered, True
-    return [(root, f, f.stem) for f in sorted(root.glob("*.mkv"))], False
+    return [MovieFolder(root, [f], f.stem) for f in sorted(root.glob("*.mkv"))], False
 
 
 # ----------------------------------------------------------------------------
@@ -126,9 +160,8 @@ def movie_target(movie, opts):
 # ----------------------------------------------------------------------------
 # 3. Traitement d'un film
 # ----------------------------------------------------------------------------
-def process_movie(folder, path, movie, args, opts, tmdb, foldered):
-    """Traite un film et retourne son Report."""
-    report = mkv.Report(matched=1, total=1)
+def process_file(path, movie, args, opts, tmdb):
+    """Traite UN fichier du film. Retourne (non_conforme, echec_ecriture), 0 ou 1 chacun."""
     # Les tags ne sont relus que si on doit les comparer : un processus de plus.
     lecture = mkv.inspect(path, args.probe, with_tags=args.verify or args.skip_done)
     info, tags = lecture.info, lecture.tags
@@ -140,11 +173,9 @@ def process_movie(folder, path, movie, args, opts, tmdb, foldered):
         diffs = [(lbl, det) for lbl, ok, det in mkv.verify(info, target, opts, tags) if not ok]
         for lbl, det in diffs:
             print(f"      [DIFF] {lbl} : actuel = {det!r}")
-        if diffs:
-            report.diffs = 1
-        else:
+        if not diffs:
             print("      [OK] deja conforme")
-        return report
+        return (1 if diffs else 0), 0
 
     if opts.date and target.date:
         origine = (f" (sortie {movie['_date_region']})" if movie.get("_date_region")
@@ -153,20 +184,36 @@ def process_movie(folder, path, movie, args, opts, tmdb, foldered):
     for line in mkv.track_preview_lines(info, opts):
         print(line)
 
-    if args.apply:
-        if args.skip_done and mkv.is_conform(info, target, opts, tags):
-            print("      [SKIP] deja a jour")
-        else:
-            code, msg = mkv.write(path, info, target, opts, tmdb)
-            if code:
-                report.failures = 1
-            print(f"      [{'OK' if code == 0 else 'ECHEC'}]" + (f" {msg}" if code else ""))
+    if not args.apply:
+        return 0, 0
+    if args.skip_done and mkv.is_conform(info, target, opts, tags):
+        print("      [SKIP] deja a jour")
+        return 0, 0
+    code, msg = mkv.write(path, info, target, opts, tmdb)
+    print(f"      [{'OK' if code == 0 else 'ECHEC'}]" + (f" {msg}" if code else ""))
+    return 0, (1 if code else 0)
+
+
+def process_movie(entry, movie, args, opts, tmdb, foldered):
+    """Traite tous les fichiers d'un film et retourne son Report.
+
+    Un film peut occuper plusieurs fichiers : chacun recoit les memes metadonnees,
+    et son nom est rappele pour qu'on sache lequel parle.
+    """
+    report = mkv.Report(matched=1, total=1)
+    for path in entry.files:
+        if len(entry.files) > 1:
+            print(f"      · {path.name}")
+        diffs, failures = process_file(path, movie, args, opts, tmdb)
+        report.diffs += diffs
+        report.failures += failures
 
     if args.artwork and foldered:
         poster = artwork.english_poster(
             lambda: tmdb.movie(movie["id"], artwork.ARTWORK_LANG),
             movie.get("poster_path"))
-        print(f"      affiche (EN) : {artwork.write_poster(poster, folder, args.apply, tmdb)}")
+        print(f"      affiche (EN) : "
+              f"{artwork.write_poster(poster, entry.folder, args.apply, tmdb)}")
     return report
 
 
@@ -431,9 +478,9 @@ def main():
         print("Note : --artwork sans effet ici (les .mkv sont a plat, pas un dossier par film).\n")
 
     report, resolved = mkv.Report(), []
-    for folder, path, rawname in movies:
-        print(f"--- {path.name} ---")
-        movie = resolve_movie(rawname, args, tmdb, single=len(movies) == 1)
+    for entry in movies:
+        print(f"--- {entry.rawname} ---")
+        movie = resolve_movie(entry.rawname, args, tmdb, single=len(movies) == 1)
         if movie is None:
             report += mkv.Report(total=1)
             continue
@@ -442,7 +489,7 @@ def main():
             print("      film non modifie (--no-tag)")
             report += mkv.Report(matched=1, total=1)
         else:
-            report += process_movie(folder, path, movie, args, opts, tmdb, foldered)
+            report += process_movie(entry, movie, args, opts, tmdb, foldered)
         print()
 
     print(f"TOTAL : {report.matched}/{report.total} film(s) associe(s).")

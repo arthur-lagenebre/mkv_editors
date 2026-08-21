@@ -98,25 +98,40 @@ class TestTagsEpisode(unittest.TestCase):
 
 
 class TestFilms(unittest.TestCase):
-    def test_detection_par_dossier(self):
+    def detecter(self, arborescence):
+        """Cree les fichiers decrits ({chemin relatif: taille}) et lance find_movies."""
         with tempfile.TemporaryDirectory() as d:
             racine = Path(d)
-            (racine / "Inception (2010)").mkdir()
-            (racine / "Inception (2010)" / "petit.mkv").write_text("x" * 10, encoding="utf-8")
-            (racine / "Inception (2010)" / "film.mkv").write_text("x" * 500, encoding="utf-8")
-            movies, foldered = films.find_movies(racine)
+            for chemin, taille in arborescence.items():
+                fichier = racine / chemin
+                fichier.parent.mkdir(parents=True, exist_ok=True)
+                fichier.write_text("x" * taille, encoding="utf-8")
+            return films.find_movies(racine)
+
+    def test_detection_par_dossier(self):
+        movies, foldered = self.detecter({"Inception (2010)/bande-annonce.mkv": 10,
+                                          "Inception (2010)/film.mkv": 500})
         self.assertTrue(foldered)
         self.assertEqual(len(movies), 1)
-        self.assertEqual(movies[0][1].name, "film.mkv")      # le plus gros fichier
-        self.assertEqual(movies[0][2], "Inception (2010)")   # nom = celui du dossier
+        self.assertEqual([f.name for f in movies[0].files], ["film.mkv"])   # le petit est ecarte
+        self.assertEqual(movies[0].rawname, "Inception (2010)")             # nom = le dossier
+
+    def test_film_en_deux_fichiers(self):
+        # Regression : seul le plus gros etait etiquete, l'autre restait nu.
+        movies, _ = self.detecter({"Heat (1995)/CD1.mkv": 500,
+                                   "Heat (1995)/CD2.mkv": 460,
+                                   "Heat (1995)/making-of.mkv": 40})
+        self.assertEqual([f.name for f in movies[0].files], ["CD1.mkv", "CD2.mkv"])
 
     def test_detection_a_plat(self):
-        with tempfile.TemporaryDirectory() as d:
-            racine = Path(d)
-            (racine / "Heat (1995).mkv").write_text("x", encoding="utf-8")
-            movies, foldered = films.find_movies(racine)
+        movies, foldered = self.detecter({"Heat (1995).mkv": 1})
         self.assertFalse(foldered)
-        self.assertEqual([m[2] for m in movies], ["Heat (1995)"])
+        self.assertEqual([m.rawname for m in movies], ["Heat (1995)"])
+        self.assertEqual(len(movies[0].files), 1)
+
+    def test_dossier_sans_video(self):
+        movies, foldered = self.detecter({"Notes/lisezmoi.txt": 5})
+        self.assertEqual((movies, foldered), ([], False))
 
     def test_tags_de_saga(self):
         movie = {"title": "Iron Man", "release_date": "2008-04-30", "_order": 1,
