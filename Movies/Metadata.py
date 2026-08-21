@@ -27,6 +27,8 @@ Structure attendue : soit un sous-dossier par film (les .mkv dedans), soit des .
 dans --dir. Le titre et l'annee sont lus dans le nom (dossier ou fichier), ex. "Inception (2010)".
 Un prefixe d'ordre de saga "{n} - " est detecte et retire pour la recherche ("1 - Iron Man"
 -> recherche "Iron Man") ; l'ordre est inscrit comme numero dans la collection (tag PART_NUMBER).
+Si la recherche se trompe sur un titre, epingle l'identifiant dans le nom du dossier -
+"Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - il sera respecte a chaque passage.
 
 Usage :
   python Metadata.py --dir "D:\Films"                         # simulation (n'ecrit rien)
@@ -167,9 +169,12 @@ def process_movie(folder, path, movie, args, opts, tmdb, foldered):
 
 def resolve_movie(rawname, args, tmdb, single):
     """Trouve le film TMDB correspondant a un nom de dossier/fichier, ou None."""
+    pinned, rawname = naming.extract_tmdb_id(rawname)
     title, year, order = naming.parse_title_year(rawname)
     if args.tmdb_id and single:
         movie_id = args.tmdb_id
+    elif pinned:
+        movie_id = pinned          # annonce plus bas, une fois le titre connu
     else:
         try:
             results = tmdb.search_movie(title, year)
@@ -195,6 +200,8 @@ def resolve_movie(rawname, args, tmdb, single):
     except TmdbError as e:
         print(f"  echec details TMDB : {e}\n")
         return None
+    if pinned and movie_id == pinned:
+        print(f"  id epingle dans le nom : {lookup.describe(movie)}")
     movie["_order"] = order
 
     # Sortie nationale (fr-FR -> FR) : sans ca, TMDB donne la sortie d'origine.

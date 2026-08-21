@@ -166,5 +166,27 @@ class TestSpeciaux(unittest.TestCase):
             self.assertEqual([n for _, n in naming.find_seasons(d)], [0, 1])
 
 
+
+
+class TestIdEpingle(unittest.TestCase):
+    def test_forme_jellyfin(self):
+        self.assertEqual(naming.extract_tmdb_id("Dune (2021) [tmdbid-438631]"),
+                         ("438631", "Dune (2021)"))
+
+    def test_forme_kodi(self):
+        self.assertEqual(naming.extract_tmdb_id("Dune {tmdb-438631}"), ("438631", "Dune"))
+
+    def test_casse_indifferente(self):
+        self.assertEqual(naming.extract_tmdb_id("Ma Serie [TMDBID-1396]")[0], "1396")
+
+    def test_sans_marqueur(self):
+        self.assertEqual(naming.extract_tmdb_id("Dune (2021)"), (None, "Dune (2021)"))
+
+    def test_marqueur_retire_avant_l_analyse_du_titre(self):
+        # Sans nettoyage, "tmdbid 438631" se retrouverait dans la recherche.
+        _, nom = naming.extract_tmdb_id("Dune (2021) [tmdbid-438631]")
+        self.assertEqual(naming.parse_title_year(nom), ("Dune", "2021", None))
+
+
 if __name__ == "__main__":
     unittest.main()

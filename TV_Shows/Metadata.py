@@ -43,7 +43,9 @@ Usage — pointe --dir sur la RACINE de la serie (dossiers "Saison N") :
 
 Structure attendue : un sous-dossier "Saison N" par saison (les .mkv dedans), chaque .mkv
 prefixe par son numero d'episode ("01 - ...", "05 - ..."). Si --dir pointe directement sur
-un dossier de saison, seule celle-ci est traitee.
+un dossier de saison, seule celle-ci est traitee. Un dossier "Specials" vaut la saison 0.
+L'identifiant TMDB peut etre epingle dans le nom du dossier de la serie, sous la forme
+"Ma Serie [tmdbid-1396]" : plus besoin de --tmdb-id aux passages suivants.
 
 Options principales :
   --tmdb-id STR    identifiant TMDB (defaut : recherche sur le nom du dossier)
