@@ -136,6 +136,10 @@ class Tmdb:
                 return same[0]
         return None
 
+    def collection(self, collection_id, language=None):
+        """Composition d'une saga : tous ses films, meme ceux qu'on ne possede pas."""
+        return self.get(f"collection/{collection_id}", language)
+
     # ---------------------------------------------------------------- Series
     def search_tv(self, name, year=None):
         endpoint = f"search/tv?query={quote(name)}"
