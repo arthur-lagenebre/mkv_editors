@@ -194,9 +194,16 @@ SUBTITLE_EXTS = {".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".sup", ".smi"}
 
 
 def files_with_ext(folder, extensions):
-    """Fichiers d'un dossier dont l'extension figure dans `extensions`, tries."""
-    return sorted(f for f in Path(folder).iterdir()
-                  if f.is_file() and f.suffix.lower() in extensions)
+    """Fichiers d'un dossier dont l'extension figure dans `extensions`, tries.
+
+    Un dossier illisible rend une liste vide : l'existence de --dir est verifiee
+    une fois pour toutes au demarrage, le reste n'a pas a s'en soucier.
+    """
+    try:
+        return sorted(f for f in Path(folder).iterdir()
+                      if f.is_file() and f.suffix.lower() in extensions)
+    except OSError:
+        return []
 
 
 def match_episode(filename, episodes, threshold, by_num=None):
@@ -222,11 +229,7 @@ def owned_numbers(folder, episodes, threshold=0.55):
     """
     by_num = {e.get("episode_number"): e for e in episodes}
     owned = set()
-    try:
-        fichiers = files_with_ext(folder, VIDEO_EXTS)
-    except OSError:
-        return owned
-    for f in fichiers:
+    for f in files_with_ext(folder, VIDEO_EXTS):
         ep, _ = match_episode(f.name, episodes, threshold, by_num)
         if ep is not None:
             owned.add(ep.get("episode_number"))

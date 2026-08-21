@@ -460,6 +460,7 @@ def parse_args():
 def main():
     args = parse_args()
     cli.setup_console()
+    cli.check_dir(args.dir)
     args.probe = mkv.check_tools(needs_mkvtoolnix=not args.no_tag)
     opts = mkv.Options.from_args(args)
     tmdb = Tmdb(cli.resolve_tmdb_key(TMDB_KEY), args.language, user_agent="movies_mkv/1.0",

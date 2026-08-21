@@ -68,7 +68,15 @@ class TestAnnexesDesFilms(FluxTestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def lancer_films(self, *options):
-        with mock.patch.object(films.mkv, "check_tools", lambda **k: False):
+        """Lance le script films, sans MKVToolNix : l'ecriture dans le .mkv est
+        simulee et notee, ce qu'on regarde ici est ce que le script decide d'ecrire."""
+        self.ecritures = []
+
+        def faux_write(path, info, target, opts, tmdb):
+            self.ecritures.append(Path(path).name)
+            return 0, ""
+
+        with mock.patch.object(films.mkv, "check_tools", lambda **k: False),              mock.patch.object(films.mkv, "write", faux_write):
             return self.lancer(films, ["--dir", str(self.racine), *options])
 
     def test_affiche_ecrite_meme_sans_etiquetage(self):
@@ -80,6 +88,7 @@ class TestAnnexesDesFilms(FluxTestCase):
     def test_affiche_ecrite_par_un_etiquetage_normal(self):
         self.lancer_films("--artwork", "--apply")
         self.assertTrue((self.film / "folder.jpg").exists())
+        self.assertEqual(self.ecritures, ["film.mkv"])     # le .mkv aussi a ete ecrit
 
     def test_verify_n_ecrit_aucune_annexe(self):
         _, sortie = self.lancer_films("--artwork", "--verify")
@@ -110,6 +119,35 @@ class TestSaisonUnique(FluxTestCase):
 
     def test_dossier_sans_numero_vaut_la_premiere_saison(self):
         self.assertEqual(self.lancer_rename("Ma Serie"), [1])
+
+
+
+
+class TestDossierInvalide(FluxTestCase):
+    """Une faute de frappe dans --dir doit s'arreter net, avant tout appel TMDB."""
+
+    def echec(self, module, dossier, options=()):
+        tmdb = FauxTmdb()
+        with self.assertRaises(SystemExit) as ctx:
+            self.lancer(module, ["--dir", str(dossier), *options], tmdb)
+        return str(ctx.exception), tmdb
+
+    def test_films_dossier_introuvable(self):
+        message, _ = self.echec(films, "dossier_qui_n_existe_pas")
+        self.assertIn("introuvable", message)
+
+    def test_rename_dossier_introuvable(self):
+        # Regression : levait une FileNotFoundError brute en pleine figure.
+        message, tmdb = self.echec(rename, "dossier_qui_n_existe_pas", ["--tmdb-id", "42"])
+        self.assertIn("introuvable", message)
+        self.assertEqual(tmdb.saisons, [])          # arret avant le reseau
+
+    def test_dir_sur_un_fichier(self):
+        with tempfile.TemporaryDirectory() as d:
+            fichier = Path(d) / "film.mkv"
+            fichier.write_text("x", encoding="utf-8")
+            message, _ = self.echec(rename, fichier, ["--tmdb-id", "42"])
+        self.assertIn("pas un fichier", message)
 
 
 if __name__ == "__main__":
