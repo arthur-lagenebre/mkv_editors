@@ -260,7 +260,8 @@ def main():
             bilan += rename_season(sub, data, args)
             print()
     else:
-        num = naming.season_number(Path(args.dir).name) or 1
+        num = naming.season_number(Path(args.dir).name)
+        num = 1 if num is None else num      # 0 = les speciaux, a ne pas confondre
         print(f"--- {Path(args.dir).name}  (TMDB saison {num}) ---")
         try:
             data = tmdb.season(args.tmdb_id, num)
