@@ -18,7 +18,8 @@ Tout est pur : aucun acces reseau, l'appelant fournit les fiches deja lues.
 
 from difflib import SequenceMatcher
 
-MIN_SCORE = 0.6         # en deca, l'appariement n'apprend rien de sur
+MIN_SCORE = 0.6         # avec un rang fiable, une ressemblance moyenne suffit
+MIN_SCORE_SEUL = 0.85   # sans rang, seul un titre presque exact fait foi
 BONUS_ORDRE = 0.5       # de quoi faire gagner un numero contre une ressemblance
 
 
@@ -44,6 +45,19 @@ def by_release(parts):
     return sorted(parts or [], key=lambda p: p.get("release_date") or "9999")
 
 
+def trustworthy_order(files, parts):
+    """La numerotation du dossier vaut-elle comme rang dans la collection ?
+
+    Elle ne le vaut que si elle couvre la saga EXACTEMENT : 1..N pour N films.
+    Des qu'un spin-off s'invite dans la collection sans etre numerote sur le
+    disque, les deux ordres divergent - "Fast & Furious : Hobbs & Shaw" occupe
+    le rang 9 de sa saga, si bien que le fichier "10 - Fast X" se ferait placer
+    sur "Fast & Furious 9". Dans le doute, seuls les titres parlent.
+    """
+    numerotes = sorted(o for _, _, o in files if isinstance(o, int))
+    return bool(numerotes) and numerotes == list(range(1, len(parts) + 1))
+
+
 def assign(files, parts):
     """[(cle, film), ...] : au plus un film de la saga par fichier.
 
@@ -53,12 +67,24 @@ def assign(files, parts):
     reste - c'est l'elimination qui fait le gros du travail sur les titres muets.
     """
     ordonnes = by_release(parts)
+    numerote = any(isinstance(o, int) for _, _, o in files)
+    if numerote:
+        # Un dossier numerote dont les numeros ne couvrent pas la saga ne dit
+        # plus rien de sur : ni le rang (decale), ni les titres (une saga les a
+        # jumeaux - "Fast and Furious", "Fast & Furious 4", "Fast & Furious 5").
+        if not trustworthy_order(files, ordonnes):
+            return []
+        plancher, bonus = MIN_SCORE, BONUS_ORDRE
+    else:
+        # Sans numero, la ressemblance porte tout : elle doit etre franche.
+        plancher, bonus = MIN_SCORE_SEUL, 0.0
+
     scores = []
     for cle, titre, ordre in files:
         for rang, part in enumerate(ordonnes, 1):
             note = close_to(titre, part.get("title") or "")
             if ordre is not None and str(ordre) == str(rang):
-                note += BONUS_ORDRE
+                note += bonus
             scores.append((note, cle, rang, part))
     # Tri stable et deterministe : le meilleur score d'abord, puis la cle et le
     # rang, pour que deux passages donnent exactement le meme resultat.
@@ -66,7 +92,7 @@ def assign(files, parts):
 
     cles_prises, rangs_pris, retenu = set(), set(), []
     for note, cle, rang, part in scores:
-        if note < MIN_SCORE or cle in cles_prises or rang in rangs_pris:
+        if note < plancher or cle in cles_prises or rang in rangs_pris:
             continue
         cles_prises.add(cle)
         rangs_pris.add(rang)

@@ -41,13 +41,14 @@ class TestAppariement(unittest.TestCase):
         return {cle: part["id"] for cle, part in resultat}
 
     def test_le_numero_place_le_film(self):
-        # "22 - Le defi" doit prendre le 22e volume, meme si un autre titre de la
-        # saga ressemble davantage.
+        # Trois volumes au titre identique : seul le numero les separe. Il faut
+        # que la numerotation couvre la saga pour valoir comme rang.
         parts = [{"id": 101, "title": "Vol. 1 : Episode", "release_date": "1961-01-01"},
                  {"id": 102, "title": "Vol. 2 : Episode", "release_date": "1962-01-01"},
                  {"id": 103, "title": "Vol. 3 : Episode", "release_date": "1963-01-01"}]
-        resultat = self.cles(saga.assign([("f", "Episode", 3)], parts))
-        self.assertEqual(resultat, {"f": 103})
+        fichiers = [("a", "Episode", 1), ("b", "Episode", 2), ("c", "Episode", 3)]
+        self.assertEqual(self.cles(saga.assign(fichiers, parts)),
+                         {"a": 101, "b": 102, "c": 103})
 
     def test_l_evidence_puis_l_elimination(self):
         # "Apocalypse" se place tout seul ; "Ground Zero" et "The final Chapter"
@@ -57,6 +58,25 @@ class TestAppariement(unittest.TestCase):
         self.assertEqual(self.cles(saga.assign(fichiers, RESIDENT_EVIL)),
                          {"a": 1576, "b": 1577, "c": 1578})
 
+    def test_une_numerotation_incomplete_ne_vaut_pas_un_rang(self):
+        # Regression : "Hobbs & Shaw" occupe le rang 9 de sa saga sans etre
+        # numerote sur le disque, et "10 - Fast X" se faisait placer sur
+        # "Fast & Furious 9". Trois fichiers pour quatre films : on ne peut plus
+        # se fier aux numeros, seuls les titres parlent.
+        parts = RESIDENT_EVIL + [{"id": 9, "title": "Un spin-off",
+                                  "release_date": "2005-01-01"}]
+        fichiers = [("a", "Ground Zero", 1), ("b", "Apocalypse", 2),
+                    ("c", "The final Chapter", 3)]
+        self.assertFalse(saga.trustworthy_order(fichiers, parts))
+        # Et le dossier entier est laisse tranquille : sans rang fiable, les
+        # titres jumeaux d une saga s apparient n importe comment ("Fast five"
+        # a fini sur "Fast Forever", sorti en 2028).
+        self.assertEqual(saga.assign(fichiers, parts), [])
+
+    def test_une_numerotation_complete_vaut_un_rang(self):
+        fichiers = [("a", "Ground Zero", 1), ("b", "Apocalypse", 2),
+                    ("c", "The final Chapter", 3)]
+        self.assertTrue(saga.trustworthy_order(fichiers, RESIDENT_EVIL))
     def test_un_film_de_la_saga_ne_sert_qu_une_fois(self):
         fichiers = [("a", "Apocalypse", None), ("b", "Apocalypse", None)]
         resultat = saga.assign(fichiers, RESIDENT_EVIL)
