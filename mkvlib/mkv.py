@@ -174,6 +174,39 @@ def read_tags(path):
     return parse_tags(out) if out else set()
 
 
+# Identifiant TMDB, tel que Matroska le normalise dans ses "External Identifiers" :
+# la valeur s'ecrit "movie/1234". Inscrit dans le fichier, il survit au renommage
+# et dispense les passages suivants de toute recherche - donc de toute erreur.
+TMDB_TAG = "TMDB"
+TMDB_VALUE_RE = re.compile(r"^\s*(?:movie/)?(\d+)\s*$", re.IGNORECASE)
+
+
+def tmdb_value(movie_id):
+    """Valeur normalisee du tag TMDB pour un film."""
+    return f"movie/{movie_id}"
+
+
+def tmdb_id(tags):
+    """Identifiant TMDB lu dans les tags d'un fichier, ou None."""
+    for _, name, value in tags or ():
+        if (name or "").upper() == TMDB_TAG:
+            found = TMDB_VALUE_RE.match(value or "")
+            if found:
+                return found.group(1)
+    return None
+
+
+def has_tags(info):
+    """Le fichier declare-t-il des tags ? mkvmerge en donne le compte, pas le contenu.
+
+    C'est ce qui rend la relecture abordable : un mkvextract de plus par fichier
+    coute autant qu'un ffprobe, et sur une mediatheque jamais etiquetee il n'y
+    aurait rien a y lire.
+    """
+    return any((entry or {}).get("num_entries")
+               for entry in ((info or {}).get("global_tags") or []))
+
+
 READ_WORKERS = 8      # lectures simultanees : c'est de l'attente de sous-processus
 
 
@@ -189,12 +222,14 @@ class Reading:
 def inspect(path, with_probe=True, with_tags=False):
     """Lecture complete d'un fichier. Sans affichage : appelable en parallele.
 
-    Les tags ne sont relus que si on en a besoin (--verify, --skip-done) : c'est
-    un sous-processus de plus par fichier.
+    Les tags sont relus quand on en a besoin (--verify, --skip-done), et quand
+    le fichier en declare : ils portent alors peut-etre l'identifiant TMDB, qui
+    vaut mieux que n'importe quelle recherche. C'est un sous-processus de plus
+    par fichier, mais seulement la ou il y a quelque chose a lire.
     """
     info, note = identify(path)
     probe = annotate_bitrates(info, path) if (info and with_probe) else Probe()
-    tags = read_tags(path) if (info and with_tags) else None
+    tags = read_tags(path) if (info and (with_tags or has_tags(info))) else None
     return Reading(info, probe, tags, note)
 
 

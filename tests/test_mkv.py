@@ -196,6 +196,53 @@ class TestPistesAmbigues(unittest.TestCase):
     def test_fichier_illisible(self):
         self.assertEqual(mkv.track_conflicts(None, self.opts), [])
 
+class TestIdentifiantDansLeFichier(unittest.TestCase):
+    """L identifiant TMDB inscrit dans le .mkv : ecrit, relu, et pas paye pour rien."""
+
+    def test_valeur_au_format_matroska(self):
+        # Matroska normalise ce tag : "movie/1234", pas "1234".
+        self.assertEqual(mkv.tmdb_value(314), "movie/314")
+
+    def test_relecture(self):
+        self.assertEqual(mkv.tmdb_id({(50, "TMDB", "movie/314")}), "314")
+
+    def test_relecture_d_un_identifiant_nu(self):
+        # Tolere la forme sans prefixe, qu ecrivent d autres outils.
+        self.assertEqual(mkv.tmdb_id({(50, "TMDB", "314")}), "314")
+
+    def test_un_identifiant_de_serie_n_est_pas_un_film(self):
+        self.assertIsNone(mkv.tmdb_id({(50, "TMDB", "tv/1396")}))
+
+    def test_sans_identifiant(self):
+        self.assertIsNone(mkv.tmdb_id({(50, "TITLE", "Catwoman")}))
+        self.assertIsNone(mkv.tmdb_id(None))
+
+    def test_presence_de_tags_annoncee_par_mkvmerge(self):
+        self.assertTrue(mkv.has_tags({"global_tags": [{"num_entries": 2}]}))
+        self.assertFalse(mkv.has_tags({"global_tags": []}))
+        self.assertFalse(mkv.has_tags(None))
+
+    def lire(self, info):
+        """Lance inspect en notant si mkvextract a ete appele."""
+        appels = []
+        with mock.patch.object(mkv, "identify", lambda p: (info, "")):
+            with mock.patch.object(mkv, "read_tags",
+                                   lambda p: appels.append(p) or {(50, "TMDB", "movie/9")}):
+                lecture = mkv.inspect("film.mkv", with_probe=False)
+        return lecture, appels
+
+    def test_aucune_relecture_si_le_fichier_n_a_pas_de_tags(self):
+        # Le cout du feature : un mkvextract par fichier. Sur une mediatheque
+        # jamais etiquetee, il ne doit jamais etre lance.
+        lecture, appels = self.lire({"global_tags": [], "tracks": []})
+        self.assertEqual(appels, [])
+        self.assertIsNone(lecture.tags)
+
+    def test_relecture_quand_le_fichier_declare_des_tags(self):
+        lecture, appels = self.lire({"global_tags": [{"num_entries": 3}], "tracks": []})
+        self.assertEqual(len(appels), 1)
+        self.assertEqual(mkv.tmdb_id(lecture.tags), "9")
+
 class TestTagsXML(unittest.TestCase):
     def test_document_bien_forme_et_echappe(self):
         xml = mkv.tags_document([mkv.tag_block(50, [mkv.simple("TITLE", "Rock & <Roll>")])])

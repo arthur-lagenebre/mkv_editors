@@ -114,6 +114,12 @@ class TestFilms(unittest.TestCase):
         film = root.findall("Tag")[1]
         self.assertEqual(film.find("Simple[Name='GENRE']/String").text, "Action, Science-Fiction")
 
+    def test_l_identifiant_est_inscrit_dans_le_film(self):
+        # Pour que le passage suivant n ait plus rien a chercher.
+        root = ElementTree.fromstring(films.build_movie_tags_xml({"id": 314,
+                                                                  "title": "Catwoman"}))
+        film = root.findall("Tag")[-1]
+        self.assertEqual(film.find("Simple[Name='TMDB']/String").text, "movie/314")
     def test_film_hors_saga(self):
         movie = {"title": "Heat", "credits": {}}
         root = ElementTree.fromstring(films.build_movie_tags_xml(movie))
@@ -175,9 +181,10 @@ class FauxTmdbFilms:
 
     def __init__(self, resultats=()):
         self.resultats = list(resultats)
-        self.details = []
+        self.details, self.recherches = [], []
 
     def search_movie(self, title, year=None):
+        self.recherches.append(title)
         return list(self.resultats)
 
     def movie(self, movie_id, language=None):
@@ -275,6 +282,35 @@ class TestQuestionsDeFinDePassage(unittest.TestCase):
         self.assertIsNone(movie)                        # pas encore charge
         self.assertEqual(tmdb.details, [])              # ni meme interroge
         self.assertEqual([c["id"] for c in doute.candidates], [22059, 9738])
+
+class TestIdentifiantLuDansLeFilm(unittest.TestCase):
+    """Un identifiant inscrit dans le .mkv dispense de toute recherche."""
+
+    def setUp(self):
+        self.args = types.SimpleNamespace(no_ask=False, language="fr-FR",
+                                          no_date=True, tmdb_id=None)
+
+    def resoudre(self, rawname, tag_id):
+        tmdb = FauxTmdbFilms([{"id": 999, "title": "Autre chose"}])
+        with redirect_stdout(io.StringIO()) as sortie:
+            movie, _ = films.resolve_movie(rawname, self.args, tmdb, single=False,
+                                           tag_id=tag_id)
+        return movie, tmdb, sortie.getvalue()
+
+    def test_l_identifiant_du_fichier_evite_la_recherche(self):
+        movie, tmdb, sortie = self.resoudre("zzz nom illisible", "314")
+        self.assertEqual(movie["id"], 314)
+        self.assertEqual(tmdb.recherches, [])          # rien n a ete cherche
+        self.assertIn("id lu dans le fichier", sortie)
+
+    def test_le_nom_epingle_prime_sur_le_fichier(self):
+        # Seul moyen de corriger un identifiant inscrit de travers.
+        movie, tmdb, _ = self.resoudre("Un film [tmdbid-27205]", "314")
+        self.assertEqual((movie["id"], tmdb.recherches), (27205, []))
+
+    def test_sans_identifiant_la_recherche_reprend(self):
+        movie, tmdb, _ = self.resoudre("Un film", None)
+        self.assertEqual((movie["id"], tmdb.recherches), (999, ["Un film"]))
 
 class TestRecap(unittest.TestCase):
     SAISON = {"season_number": 1, "name": "Saison 1", "episodes": [

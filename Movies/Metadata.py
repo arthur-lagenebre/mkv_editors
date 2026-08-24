@@ -9,6 +9,7 @@ Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux) :
   - le titre et la DATE de sortie dans les informations de segment
     (sortie du pays de --language : fr-FR -> sortie francaise, pas la sortie d'origine)
   - le synopsis, le realisateur, les scenaristes, le casting, les genres (tags)
+  - l'IDENTIFIANT TMDB (tag "TMDB", au format Matroska "movie/1234")
   - les tags de STATISTIQUES de piste (debit, duree, nb d'images)  [--no-stats]
   - l'affiche du film comme jaquette (attachment "cover.jpg")
   - le nom des pistes AUDIO       -> codec + canaux + debit (ex. "E-AC-3 5.1 640 kb/s")
@@ -45,18 +46,24 @@ son nom ("Inception (2010)/film.mkv") ; partout ailleurs c'est le nom du FICHIER
 et les dossiers au-dessus servent de RENFORT a la recherche, du plus proche au plus lointain :
 "Resident Evil/2 - Apocalypse.mkv" cherche "Apocalypse" (qui rend "Amour Apocalypse"...) puis
 "Resident Evil Apocalypse", et ne retient le renfort que si le titre trouve contient a la fois
-le dossier et ce qu'on cherchait. Un film coupe en
-plusieurs fichiers (CD1/CD2) recoit les memes metadonnees partout ; les bandes-annonces et
-making-of poses a cote sont reconnus A LEUR NOM et laisses de cote, comme les dossiers de
-bonus (Extras, Featurettes...). Le poids des fichiers ne decide de rien : un dessin anime
-de 1 Go est un film autant qu'un remux de 28 Go.
+le dossier et ce qu'on cherchait.
+Un film coupe en plusieurs fichiers (CD1/CD2) recoit les memes metadonnees partout ; les
+bandes-annonces et making-of poses a cote sont reconnus A LEUR NOM et laisses de cote, comme
+les dossiers de bonus (Extras, Featurettes...). Le poids des fichiers ne decide de rien : un
+dessin anime de 1 Go est un film autant qu'un remux de 28 Go.
 Un prefixe d'ordre de saga "{n} - " est detecte et retire pour la recherche ("1 - Iron Man"
 -> recherche "Iron Man"), demi-numeros compris ("1.5 - Dark Fury") ; l'ordre est inscrit comme
 numero dans la collection (tag PART_NUMBER).
 A titre egal, TMDB classe par POPULARITE : une fiche portant EXACTEMENT le titre cherche passe
 donc devant ("Blade" doit rendre Blade, pas Blade II).
-Si la recherche se trompe sur un titre, epingle l'identifiant dans le nom du dossier -
-"Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - il sera respecte a chaque passage.
+L'identifiant TMDB retenu est INSCRIT DANS LE FILM : au passage suivant, il est relu et plus
+rien n'est cherche - l'association survit donc au renommage, et ne peut plus se tromper deux
+fois de la meme facon. La relecture ne coute un sous-processus de plus que sur les fichiers
+qui declarent des tags : une mediatheque jamais etiquetee ne paie rien.
+Ordre de priorite : --tmdb-id, puis l'identifiant epingle dans le NOM, puis celui lu dans le
+FICHIER, puis la recherche. Si un passage a inscrit le mauvais identifiant, corrige-le en
+epinglant le bon dans le nom - "Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - le
+passage suivant le reecrira dans le fichier.
 
 Usage :
   python Metadata.py --dir "D:\Films"                         # simulation (n'ecrit rien)
@@ -100,6 +107,10 @@ def build_movie_tags_xml(movie, max_actors=20):
         blocks.append(mkv.tag_block(70, lines))
 
     lines = [mkv.simple("TITLE", movie.get("title", ""))]
+    if movie.get("id"):
+        # L'association elle-meme, inscrite dans le film : au passage suivant,
+        # plus rien n'est cherche, donc plus rien ne peut se tromper.
+        lines.append(mkv.simple(mkv.TMDB_TAG, mkv.tmdb_value(movie["id"])))
     if movie.get("overview"):
         lines.append(mkv.simple("SYNOPSIS", movie["overview"]))
         lines.append(mkv.simple("SUMMARY", movie["overview"]))
@@ -294,7 +305,17 @@ def movie_details(movie_id, order, args, tmdb):
     return movie
 
 
-def resolve_movie(rawname, args, tmdb, single, contexts=()):
+def tag_movie_id(entry, lectures):
+    """Identifiant TMDB deja inscrit dans les fichiers du film, ou None."""
+    for path in entry.files:
+        lecture = lectures.get(path)
+        ident = mkv.tmdb_id(lecture.tags) if lecture else None
+        if ident:
+            return ident
+    return None
+
+
+def resolve_movie(rawname, args, tmdb, single, contexts=(), tag_id=None):
     """(film, doute) pour un nom de dossier/fichier. (None, None) si rien ne colle.
 
     `contexts` liste les dossiers au-dessus du film, du plus proche au plus
@@ -311,6 +332,13 @@ def resolve_movie(rawname, args, tmdb, single, contexts=()):
         movie = movie_details(pinned, order, args, tmdb)
         if movie:
             print(f"  id epingle dans le nom : {lookup.describe(movie)}")
+        return movie, None
+    if tag_id:
+        # Le nom passe avant : c'est le seul moyen de corriger un identifiant
+        # qu'un passage precedent aurait inscrit de travers.
+        movie = movie_details(tag_id, order, args, tmdb)
+        if movie:
+            print(f"  id lu dans le fichier : {lookup.describe(movie)}")
         return movie, None
 
     try:
@@ -570,7 +598,8 @@ def main():
     for entry in movies:
         print(f"--- {entry.display} ---")
         movie, doute = resolve_movie(entry.rawname, args, tmdb, single=len(movies) == 1,
-                                     contexts=entry.contexts)
+                                     contexts=entry.contexts,
+                                     tag_id=tag_movie_id(entry, lectures))
         if doute is not None:
             print("      [A CONFIRMER] plusieurs versions portent ce titre "
                   "-> question en fin de passage")

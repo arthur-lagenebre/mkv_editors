@@ -90,6 +90,12 @@ python Movies\Metadata.py --dir "D:\Films\Dune (2021)" --tmdb-id 438631 --apply 
 python Movies\Metadata.py --dir "D:\Films" --no-tag --recap --apply   # fiche seule
 ```
 
+L'identifiant TMDB retenu est **inscrit dans le film** (tag Matroska `TMDB`, au format
+`movie/1234`) : au passage suivant il est relu, plus rien n'est cherché, et l'association
+survit au renommage. La relecture ne coûte un sous-processus de plus que sur les fichiers qui
+déclarent des tags — une médiathèque jamais étiquetée ne paie rien. Priorité : `--tmdb-id`, puis
+l'identifiant épinglé dans le **nom**, puis celui lu dans le **fichier**, puis la recherche.
+
 Comme toute la reconnaissance repose sur les noms,
 [Rename_Movies.py](Movies/Rename_Movies.py) le remet d'aplomb depuis TMDB — et `--pin-id` y
 écrit l'identifiant, après quoi plus rien n'est cherché ni ne peut se tromper :
