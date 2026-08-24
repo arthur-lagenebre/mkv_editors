@@ -84,6 +84,13 @@ animé de 1 Go est un film autant qu'un remux de 28 Go. Un préfixe d'ordre de s
 (`1 - Iron Man`, demi-numéros compris : `1.5 - Dark Fury`) est reconnu et inscrit comme numéro dans
 la collection.
 
+Un dossier de saga n'est pas une réunion de fichiers indépendants : c'est une **collection**
+TMDB. Les dossiers à plusieurs films sont donc réexaminés de l'intérieur — la saga est cherchée
+par le nom du dossier, puis parmi celles vers lesquelles plusieurs films pointent déjà, et les
+fichiers lui sont appariés un à un (numéro d'ordre d'abord, ressemblance ensuite ; chaque film
+ne servant qu'une fois, les titres muets héritent de ce qui reste). Un homonyme qui existe dans
+900 000 films n'existe pas dans une saga de 26. `--no-saga` s'en passe.
+
 À chaque passage, un **journal** est écrit à la racine de `--dir` : `metadata.log` donne le lien
 TMDB de chaque film trouvé, et groupe en fin de fichier ceux qui n'en ont pas — non associés, ou
 laissés en attente d'une réponse.

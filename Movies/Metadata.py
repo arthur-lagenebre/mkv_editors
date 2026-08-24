@@ -62,6 +62,17 @@ Un prefixe d'ordre de saga "{n} - " est detecte et retire pour la recherche ("1 
 numero dans la collection (tag PART_NUMBER).
 A titre egal, TMDB classe par POPULARITE : une fiche portant EXACTEMENT le titre cherche passe
 donc devant ("Blade" doit rendre Blade, pas Blade II).
+
+Un dossier de saga n'est pas une reunion de fichiers independants : c'est une COLLECTION
+TMDB, que l'API donne en entier. Les dossiers qui contiennent plusieurs films sont donc
+reexamines DE L'INTERIEUR : la saga est cherchee par le NOM du dossier (le seul signal qu'un
+film mal associe ne peut pas fausser), puis parmi celles vers lesquelles plusieurs films
+pointent deja. Les fichiers lui sont ensuite apparies un a un - le numero d'ordre d'abord, la
+ressemblance du titre ensuite, et chaque film de la saga ne servant qu'une fois, les titres
+muets heritent de ce qui reste. Un homonyme qui existe dans 900 000 films n'existe pas dans
+une saga de 26 : "Le defi" ne peut plus ramener Batman, ni "Vendetta" ramener V pour Vendetta.
+La numerotation du dossier doit tenir dans la collection, faute de quoi un dossier de
+rangement (le MCU numerote 35 films) se ferait passer pour une saga.  [--no-saga]
 L'identifiant TMDB retenu est INSCRIT DANS LE FILM : au passage suivant, il est relu et plus
 rien n'est cherche - l'association survit donc au renommage, et ne peut plus se tromper deux
 fois de la meme facon. La relecture ne coute un sous-processus de plus que sur les fichiers
@@ -78,6 +89,7 @@ Usage :
   python Metadata.py --dir "D:\Films" --verify                # verifie seulement
 
 Options : --apply --verify --skip-done --artwork --recap --no-tag --no-cache --no-ask
+          --no-saga
           --no-cover --no-date --no-audio-names --no-sub-names --no-flags --no-stats
           --tmdb-id (force, si un seul film) --language (defaut fr-FR) --image-size (w780)
 
@@ -92,6 +104,8 @@ annexes sans rien modifier dans les .mkv.
 """
 
 import argparse
+import contextlib
+import io
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -100,6 +114,7 @@ from xml.sax.saxutils import escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
 from mkvlib import artwork, cache, cli, embed, lookup, mkv, naming  # noqa: E402
+from mkvlib import saga as saga_module  # noqa: E402
 from mkvlib.tmdb import (Tmdb, TmdbAuthError, TmdbError,   # noqa: E402
                         movie_url, release_region)
 
@@ -355,6 +370,107 @@ def movie_details(movie_id, order, args, tmdb):
     return movie
 
 
+def folder_groups(movies):
+    """{dossier: [films]} pour les dossiers qui en contiennent plusieurs."""
+    groupes = {}
+    for entry in movies:
+        groupes.setdefault(entry.folder, []).append(entry)
+    return {d: g for d, g in groupes.items() if len(g) > 1}
+
+
+def saga_candidates(dossier, vues, tmdb):
+    """[[films d'une collection], ...] a essayer pour ce dossier, la plus sure d'abord.
+
+    Le NOM du dossier passe devant : c'est le seul signal qu'un film mal associe
+    ne peut pas fausser, et un dossier dont tous les films sont faux ne designe
+    aucune saga - c'est pourtant celui qui a le plus besoin d'aide. Vient ensuite
+    la saga vers laquelle plusieurs films pointent deja, utile quand le dossier
+    ne porte pas le nom de sa saga.
+
+    Plusieurs pistes plutot qu'une seule : un dossier chevauche parfois deux
+    collections (les Tortues Ninja de 1990 et le reboot de 2014).
+
+    Le controle de numerotation, lui, se fait au moment de l'appariement : il
+    depend des fichiers qui restent a placer.
+    """
+    pistes = []
+    try:
+        trouvees = tmdb.search_collection(dossier.name)
+    except TmdbError:
+        trouvees = []
+    # La saga trouvee par le nom doit vraiment ressembler au dossier : une
+    # mediatheque nommee "films" ramene "MIRRORLIAR FILMS", et "_Marvel"
+    # ramene "Marvel Rising Collection" - ni l'une ni l'autre n'est une saga.
+    for c in trouvees[:1]:
+        if saga_module.close_to(dossier.name, c.get("name") or "") >= saga_module.MIN_SCORE:
+            pistes.append(c["id"])
+    commune = saga_module.most_common_collection(vues)
+    if commune is not None and commune not in pistes:
+        pistes.append(commune)
+
+    sorties = []
+    for ident in pistes:
+        try:
+            parts = tmdb.collection(ident).get("parts", [])
+        except TmdbError:
+            continue
+        if parts:
+            sorties.append(parts)
+    return sorties
+
+
+def saga_corrections(movies, lectures, args, tmdb):
+    """{nom affiche: fiche TMDB} pour les films qu'une collection replace mieux.
+
+    Passe silencieuse, avant tout le reste. Chaque film d'un dossier multiple est
+    resolu comme d'habitude, puis le dossier est reexamine DE L'INTERIEUR : les
+    fichiers sont apparies aux films de la saga, un a un. Un homonyme qui existe
+    dans 900 000 films n'existe pas dans une saga de 26 - "Le defi" ne peut plus
+    ramener Batman, ni "Vendetta" ramener V pour Vendetta.
+
+    Les recherches sont rejouees ensuite par la boucle principale, mais le cache
+    des reponses TMDB les rend gratuites.
+    """
+    corrections = {}
+    for dossier, entrees in folder_groups(movies).items():
+        fixes, fiches, vues, fichiers = set(), {}, [], []
+        for entry in entrees:
+            with contextlib.redirect_stdout(io.StringIO()):
+                movie, doute = resolve_movie(entry.rawname, args, tmdb,
+                                             single=False, contexts=entry.contexts,
+                                             tag_id=tag_movie_id(entry, lectures))
+                if movie is None and doute is not None:
+                    movie = movie_details(doute.candidates[0]["id"], None, args, tmdb)
+            if movie is None:
+                continue
+            fiches[entry.display] = movie
+            vues.append((movie.get("belongs_to_collection") or {}).get("id"))
+            # Un identifiant epingle ou deja inscrit dans le film ne se discute
+            # pas : il retient sa fiche, et personne d'autre ne peut l'avoir.
+            if naming.extract_tmdb_id(entry.rawname)[0] or tag_movie_id(entry, lectures):
+                fixes.add(movie.get("id"))
+                continue
+            _, nom = naming.extract_tmdb_id(entry.rawname)
+            titre, _, ordre = naming.parse_title_year(nom)
+            fichiers.append((entry.display, titre, ordre))
+
+        if not fichiers:
+            continue
+        restants = list(fichiers)
+        for parts in saga_candidates(dossier, vues, tmdb):
+            if not restants or not saga_module.fits(restants, parts):
+                continue
+            libres = [p for p in parts if p.get("id") not in fixes]
+            places = saga_module.assign(restants, libres)
+            for cle, part in places:
+                fixes.add(part.get("id"))
+                if part.get("id") != fiches[cle].get("id"):
+                    corrections[cle] = part
+            posees = {cle for cle, _ in places}
+            restants = [f for f in restants if f[0] not in posees]
+    return corrections
+
+
 def tag_movie_id(entry, lectures):
     """Identifiant TMDB deja inscrit dans les fichiers du film, ou None."""
     for path in entry.files:
@@ -365,7 +481,7 @@ def tag_movie_id(entry, lectures):
     return None
 
 
-def resolve_movie(rawname, args, tmdb, single, contexts=(), tag_id=None):
+def resolve_movie(rawname, args, tmdb, single, contexts=(), tag_id=None, saga=None):
     """(film, doute) pour un nom de dossier/fichier. (None, None) si rien ne colle.
 
     `contexts` liste les dossiers au-dessus du film, du plus proche au plus
@@ -389,6 +505,11 @@ def resolve_movie(rawname, args, tmdb, single, contexts=(), tag_id=None):
         movie = movie_details(tag_id, order, args, tmdb)
         if movie:
             print(f"  id lu dans le fichier : {lookup.describe(movie)}")
+        return movie, None
+    if saga is not None:
+        movie = movie_details(saga["id"], order, args, tmdb)
+        if movie:
+            print(f"  place par sa saga : {lookup.describe(saga)}")
         return movie, None
 
     try:
@@ -590,6 +711,8 @@ def parse_args():
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
     ap.add_argument("--no-cache", action="store_true",
                     help="Ignore le cache des reponses TMDB et le rafraichit")
+    ap.add_argument("--no-saga", action="store_true",
+                    help="N'utilise pas les collections TMDB pour replacer les films")
     ap.add_argument("--no-ask", action="store_true",
                     help="Ne pose aucune question : garde le 1er resultat TMDB, comme avant")
     ap.add_argument("--apply", action="store_true", help="Applique reellement (defaut : simulation)")
@@ -645,13 +768,18 @@ def main():
         lectures = mkv.inspect_all(fichiers, args.probe,
                                    with_tags=args.verify or args.skip_done)
 
+    corrections = {} if args.no_saga else saga_corrections(movies, lectures, args, tmdb)
+    if corrections:
+        print(f"{len(corrections)} film(s) replace(s) par leur saga TMDB.\n")
+
     report, library = mkv.Report(), Library([], {}, lectures)
     attente = []
     for entry in movies:
         print(f"--- {entry.display} ---")
         movie, doute = resolve_movie(entry.rawname, args, tmdb, single=len(movies) == 1,
                                      contexts=entry.contexts,
-                                     tag_id=tag_movie_id(entry, lectures))
+                                     tag_id=tag_movie_id(entry, lectures),
+                                     saga=corrections.get(entry.display))
         if doute is not None:
             print("      [A CONFIRMER] plusieurs versions portent ce titre "
                   "-> question en fin de passage")

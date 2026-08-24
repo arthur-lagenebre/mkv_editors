@@ -127,6 +127,10 @@ class Tmdb:
             endpoint += f"&year={year}"
         return self.get(endpoint).get("results", [])
 
+    def search_collection(self, name):
+        """Collections TMDB portant ce nom - une saga se cherche comme un film."""
+        return self.get(f"search/collection?query={quote(name)}").get("results", [])
+
     def movie(self, movie_id, language=None):
         """Details du film + credits (realisateur, scenaristes, casting)."""
         return self.get(f"movie/{movie_id}?append_to_response=credits", language)
