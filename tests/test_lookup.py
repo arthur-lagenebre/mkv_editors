@@ -186,8 +186,9 @@ class TestRenfortDuDossier(unittest.TestCase):
                                                         ["Resident Evil"])
         self.assertEqual((resultats[0]["id"], requete), (1, "Apocalypse"))
 
-    def test_le_grand_parent_prend_le_relais(self):
-        # "Resident Evil/Animation/3 - Vendetta" : le dossier immediat ne dit rien.
+    def test_le_grand_parent_n_est_pas_essaye(self):
+        # Compromis assume : "Resident Evil/Animation/3 - Vendetta" reste mal
+        # associe, mais aucun dossier de rangement ne pollue plus les recherches.
         tmdb = FauxFilms({"Vendetta": [{"id": 752, "title": "V pour Vendetta",
                                         "vote_count": 12000}],
                           "Resident Evil Vendetta": [
@@ -195,8 +196,7 @@ class TestRenfortDuDossier(unittest.TestCase):
                                "vote_count": 3200}]})
         resultats, requete = lookup.search_with_context(
             tmdb, "Vendetta", None, ["Animation", "Resident Evil"])
-        self.assertEqual((resultats[0]["id"], requete),
-                         (424781, "Resident Evil Vendetta"))
+        self.assertEqual((resultats[0]["id"], requete), (752, "Vendetta"))
 
     def test_pas_de_renfort_si_le_film_trouve_porte_deja_la_saga(self):
         # "Folie a deux" ramene deja "Joker : Folie a deux" : rien a ajouter.
@@ -205,12 +205,12 @@ class TestRenfortDuDossier(unittest.TestCase):
         _, requete = lookup.search_with_context(tmdb, "Folie a deux", None, ["Joker"])
         self.assertEqual((requete, len(tmdb.appels)), ("Folie a deux", 1))
 
-    def test_au_plus_deux_dossiers_essayes(self):
-        # Remonter toute l arborescence couterait une requete par etage.
-        tmdb = FauxFilms({"Film": [{"id": 1, "title": "Autre"}]})
-        lookup.search_with_context(tmdb, "Film", None, ["A", "B", "C"])
-        self.assertEqual(tmdb.appels,
-                         [("Film", None), ("A Film", None), ("B Film", None)])
+    def test_un_seul_dossier_essaye(self):
+        # Au-dessus du dossier immediat vivent les dossiers de rangement d une
+        # mediatheque ("_Marvel"), qui ne sont pas des sagas.
+        tmdb = FauxFilms({"Film": [{"id": 1, "title": "Autre", "vote_count": 900}]})
+        lookup.search_with_context(tmdb, "Film", None, ["Saga", "_Marvel"])
+        self.assertEqual(tmdb.appels, [("Film", None), ("Saga Film", None)])
     def test_un_petit_film_de_saga_passe_quand_meme(self):
         # "Death Race : Anarchy" (399 votes) face a "American Nightmare 2" (6 787) :
         # peu vote, mais c est bien le film du dossier.
@@ -304,10 +304,33 @@ class TestVariantesDeTitre(unittest.TestCase):
                              "Les Gardiens de la Galaxie : Volume 3")
         self.assertEqual(rivaux, ["Les Gardiens de la Galaxie : Volume 3"])
 
-    def test_liste_de_choix_montre_les_concurrents_en_premier(self):
-        res = [{"id": 1, "title": "A"}, {"id": 2, "title": "B"}, {"id": 3, "title": "C"}]
-        choix = lookup.choice_list(res, [res[2]])
-        self.assertEqual([m["id"] for m in choix], [1, 3, 2])
+    def test_deux_films_du_meme_titre_font_une_question(self):
+        # "Dracula" en rend trois : rien dans le nom ne les departage.
+        res = [{"id": 1246049, "title": "Dracula", "vote_count": 1433},
+               {"id": 6114, "title": "Dracula", "vote_count": 5875}]
+        best, _ = lookup.pick_result(res, "Dracula")
+        self.assertEqual([m["id"] for m in lookup.twin_versions(res, best)], [6114])
+
+    def test_un_homonyme_confidentiel_ne_fait_pas_de_question(self):
+        # Sans ce filtre, un cinquieme de la mediatheque poserait une question :
+        # presque tout titre a un homonyme obscur quelque part sur TMDB.
+        res = [{"id": 149, "title": "Akira", "vote_count": 5000},
+               {"id": 999, "title": "Akira", "vote_count": 3}]
+        best, _ = lookup.pick_result(res, "Akira")
+        self.assertEqual(lookup.twin_versions(res, best), [])
+
+    def test_un_titre_different_n_est_pas_un_jumeau(self):
+        res = [{"id": 1, "title": "Dracula", "vote_count": 900},
+               {"id": 2, "title": "Dracula Untold", "vote_count": 6000}]
+        best, _ = lookup.pick_result(res, "Dracula")
+        self.assertEqual(lookup.twin_versions(res, best), [])
+    def test_liste_de_choix_met_le_plus_vote_en_tete(self):
+        # La reponse par defaut - une simple Entree - doit etre la plus vraisemblable.
+        res = [{"id": 1, "title": "A", "vote_count": 10},
+               {"id": 2, "title": "B", "vote_count": 5},
+               {"id": 3, "title": "C", "vote_count": 900}]
+        choix = lookup.choice_list(res, res[0], [res[2]])
+        self.assertEqual([m["id"] for m in choix], [3, 1, 2])
 
 class TestNomDeSerie(unittest.TestCase):
     def query(self, *segments):

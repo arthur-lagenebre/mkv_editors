@@ -24,12 +24,17 @@ un nom qui dit "force" sans drapeau transposable, ou deux pistes de meme langue 
 porteraient le meme nom (deux "Full" francais, que plus rien ne distingue). Rien n'est
 modifie, la raison est affichee sous [NON TRAITE], et le bilan les compte.
 
-Quand plusieurs fiches TMDB ecrivent le MEME titre autrement ("Les Quatre Fantastiques" et
-"Les 4 Fantastiques"), le film est mis de cote et la QUESTION est posee A LA FIN du passage,
-dans le terminal : candidats numerotes, Entree garde le premier, i laisse le film de cote, q
-arrete les questions. Une suite ("Iron Man 2") n'est pas une variante et ne declenche rien.
-Hors terminal (sortie redirigee, CI), les films restent de cote plutot que de bloquer le
-passage ; --no-ask retablit l'ancien comportement, le premier resultat sans rien demander.
+Deux situations que le script refuse de trancher seul, et qu'il met de cote pour poser la
+QUESTION A LA FIN du passage : plusieurs fiches ecrivent le meme titre autrement ("Les Quatre
+Fantastiques" et "Les 4 Fantastiques"), ou plusieurs fiches portent le MEME titre ("Dracula"
+en rend trois, "Mortal Kombat" deux). Dans les deux cas seules comptent les fiches assez
+votees pour etre credibles : presque tout titre a un homonyme obscur quelque part, et sans ce
+filtre un cinquieme de la mediatheque poserait une question.
+Dans le terminal : candidats numerotes, le plus vote en tete, Entree le garde, i laisse le
+film de cote, q arrete les questions. Une suite ("Iron Man 2") n'est pas une variante et ne
+declenche rien. Hors terminal (sortie redirigee, CI), les films restent de cote plutot que de
+bloquer le passage ; --no-ask retablit l'ancien comportement, le premier resultat sans rien
+demander.
 
 Dependances EXTERNES (dans le PATH) : mkvpropedit + mkvmerge + mkvextract (MKVToolNix),
 ffprobe (FFmpeg).
@@ -43,10 +48,11 @@ Structure libre : --dir est parcouru RECURSIVEMENT, aussi profond qu'il y a des 
 Seuls les .mkv sont des films - un dossier ne compte ni ne se traite jamais comme un film,
 il ne fait que ranger. Un dossier qui ne contient qu'un film et rien en dessous lui prete
 son nom ("Inception (2010)/film.mkv") ; partout ailleurs c'est le nom du FICHIER qui parle,
-et les dossiers au-dessus servent de RENFORT a la recherche, du plus proche au plus lointain :
-"Resident Evil/2 - Apocalypse.mkv" cherche "Apocalypse" (qui rend "Amour Apocalypse"...) puis
-"Resident Evil Apocalypse", et ne retient le renfort que si le titre trouve contient a la fois
-le dossier et ce qu'on cherchait.
+et le dossier IMMEDIAT sert de renfort a la recherche : "Resident Evil/2 - Apocalypse.mkv"
+cherche "Apocalypse" (qui rend "Amour Apocalypse"...) puis "Resident Evil Apocalypse", et ne
+retient le renfort que si le titre trouve contient a la fois le dossier et ce qu'on cherchait.
+Lui seul : au-dessus vivent les dossiers de rangement d'une mediatheque ("_Marvel", "_DC"),
+qui ne sont pas des sagas.
 Un film coupe en plusieurs fichiers (CD1/CD2) recoit les memes metadonnees partout ; les
 bandes-annonces et making-of poses a cote sont reconnus A LEUR NOM et laisses de cote, comme
 les dossiers de bonus (Extras, Featurettes...). Le poids des fichiers ne decide de rien : un
@@ -75,6 +81,10 @@ Options : --apply --verify --skip-done --artwork --recap --no-tag --no-cache --n
           --no-cover --no-date --no-audio-names --no-sub-names --no-flags --no-stats
           --tmdb-id (force, si un seul film) --language (defaut fr-FR) --image-size (w780)
 
+A chaque passage, un JOURNAL est ecrit a la racine de --dir : "metadata.log" donne le lien
+TMDB de chaque film trouve, et groupe en fin de fichier ceux qui n'en ont pas - non associes,
+ou laisses en attente d'une reponse.
+
 --recap genere une fiche HTML de la mediatheque a la racine de --dir : mur d'affiches
 groupe par saga, avec les films qui MANQUENT a chaque saga (TMDB en connait la
 composition). Fichier unique, les affiches sont encodees dedans. --no-tag genere les
@@ -83,13 +93,15 @@ annexes sans rien modifier dans les .mkv.
 
 import argparse
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
 from mkvlib import artwork, cache, cli, embed, lookup, mkv, naming  # noqa: E402
-from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError, release_region   # noqa: E402
+from mkvlib.tmdb import (Tmdb, TmdbAuthError, TmdbError,   # noqa: E402
+                        movie_url, release_region)
 
 
 # ----------------------------------------------------------------------------
@@ -223,6 +235,40 @@ class Library:
     resolved: list          # fiches TMDB retenues, pour la fiche recap
     seen: dict              # {id TMDB: film deja vu} - detection des doublons
     lectures: dict          # {chemin: Reading}
+    journal: list = field(default_factory=list)   # (nom affiche, id TMDB, statut)
+
+    def note(self, display, movie_id=None, statut=""):
+        """Consigne le sort d'un film pour le journal de fin de passage."""
+        self.journal.append((display, movie_id, statut))
+
+
+def write_log(root_dir, library, args, report):
+    """Ecrit le journal du passage : un lien TMDB par film, les vides a la fin.
+
+    Le terminal defile et se perd ; ce fichier reste. Les films sans lien sont
+    groupes en fin de fichier : ce sont eux qui demandent quelque chose.
+    """
+    out = Path(root_dir) / "metadata.log"
+    trouves = [(nom, mid, st) for nom, mid, st in library.journal if mid]
+    vides = [(nom, st) for nom, mid, st in library.journal if not mid]
+    largeur = min(max((len(nom) for nom, _, _ in library.journal), default=0), 70)
+
+    lignes = [f"# Metadata.py - {Path(root_dir).resolve()}",
+              f"# {datetime.now():%Y-%m-%d %H:%M} - {cli.mode_label(args)}",
+              f"# {report.matched}/{report.total} film(s) associe(s)", ""]
+    for nom, movie_id, statut in trouves:
+        lignes.append(f"{nom:<{largeur}}  {movie_url(movie_id)}"
+                      + (f"  {statut}" if statut else ""))
+    if vides:
+        lignes += ["", f"# --- sans lien ({len(vides)}) ---"]
+        lignes += [f"{nom:<{largeur}}  {statut}" for nom, statut in vides]
+
+    try:
+        out.write_text("\n".join(lignes) + "\n", encoding="utf-8")
+    except OSError as e:
+        print(f"[log] {out.name} non ecrit : {e}")
+        return
+    print(f"[log] {out.name} ecrit ({len(trouves)} lien(s), {len(vides)} sans lien)")
 
 
 def handle_movie(entry, movie, library, args, opts, tmdb):
@@ -240,6 +286,8 @@ def handle_movie(entry, movie, library, args, opts, tmdb):
         report = process_movie(entry, movie, library.lectures, args, opts, tmdb)
     if args.artwork and entry.owns_folder:
         write_artwork(entry, movie, args, tmdb)
+    library.note(entry.display, movie.get("id"),
+                 "[NON TRAITE]" if report.skipped else "")
     return report
 
 
@@ -256,6 +304,7 @@ def resolve_pending(attente, library, args, opts, tmdb):
         print("  --no-ask pour accepter le premier resultat sans demander.\n")
         for entry, doute in attente:
             print(f"  [A CONFIRMER] {entry.display} -> {lookup.describe(doute.candidates[0])}")
+            library.note(entry.display, None, "[A CONFIRMER]")
         return mkv.Report(matched=len(attente), total=len(attente), pending=len(attente))
 
     print("  Entree = garder le 1er, i = laisser de cote, q = arreter les questions.\n")
@@ -273,6 +322,7 @@ def resolve_pending(attente, library, args, opts, tmdb):
         if choix == cli.ASK_SKIP:
             print("      [NON TRAITE] association non confirmee\n")
             report += mkv.Report(matched=1, total=1, pending=1)
+            library.note(entry.display, None, "[A CONFIRMER]")
             continue
         candidat = doute.candidates[choix]
         movie = movie_details(candidat["id"], doute.order, args, tmdb)
@@ -357,10 +407,12 @@ def resolve_movie(rawname, args, tmdb, single, contexts=(), tag_id=None):
     for note in notes:
         print(f"  /!\\ {note}")
 
-    rivaux = lookup.rival_versions(query, results)
-    if rivaux and not args.no_ask:
+    # Deux facons de ne pas pouvoir trancher : le meme titre ecrit autrement
+    # ("Les 4 Fantastiques"), ou le meme titre porte par deux films (un remake).
+    doutes = lookup.rival_versions(query, results) + lookup.twin_versions(results, best)
+    if doutes and not args.no_ask:
         return None, lookup.Doubt(query=query, notes=notes, order=order,
-                                  candidates=lookup.choice_list(results, rivaux))
+                                  candidates=lookup.choice_list(results, best, doutes))
     return movie_details(best["id"], order, args, tmdb), None
 
 
@@ -608,6 +660,7 @@ def main():
             continue
         if movie is None:
             report += mkv.Report(total=1)
+            library.note(entry.display, None, "[NON ASSOCIE]")
             continue
         report += handle_movie(entry, movie, library, args, opts, tmdb)
         print()
@@ -619,6 +672,7 @@ def main():
     print(f"TOTAL : {report.matched}/{report.total} film(s) associe(s).")
     if args.recap and resolved:
         write_recap(args.dir, resolved, args, tmdb)
+    write_log(args.dir, library, args, report)
     reste = report.epilogue()
     if reste:
         print(f"\nA CORRIGER : {reste}.")

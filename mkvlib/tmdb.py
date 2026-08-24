@@ -16,6 +16,12 @@ from urllib.request import Request, urlopen
 
 API = "https://api.themoviedb.org/3"
 IMG_BASE = "https://image.tmdb.org/t/p/"
+WEB_BASE = "https://www.themoviedb.org"
+
+
+def movie_url(movie_id):
+    """Adresse de la fiche d'un film sur le site TMDB."""
+    return f"{WEB_BASE}/movie/{movie_id}"
 
 # Ordre de preference des types de sortie TMDB :
 # theatrale > theatrale limitee > premiere > numerique > physique > TV.

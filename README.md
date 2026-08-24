@@ -70,7 +70,8 @@ ou deux pistes de même langue qui porteraient le même nom), le film n'est **pa
 rien n'est modifié, la raison s'affiche sous `[NON TRAITE]`, et le bilan les compte.
 
 Quand plusieurs fiches TMDB écrivent le **même titre autrement** (« Les Quatre Fantastiques »
-et « Les 4 Fantastiques »), le film est mis de côté et la question est posée **à la fin du
+et « Les 4 Fantastiques »), ou quand plusieurs portent le **même titre** (« Dracula » en rend
+trois), le film est mis de côté et la question est posée **à la fin du
 passage**, dans le terminal : candidats numérotés, `Entrée` garde le premier, `i` laisse le film
 de côté, `q` arrête les questions. Une suite (« Iron Man 2 ») n'est pas une variante et ne
 demande rien. Hors terminal (sortie redirigée, CI) les films restent de côté au lieu de bloquer ;
@@ -82,6 +83,10 @@ fichiers (`CD1`/`CD2`) est étiqueté en entier. Bandes-annonces, making-of et d
 animé de 1 Go est un film autant qu'un remux de 28 Go. Un préfixe d'ordre de saga
 (`1 - Iron Man`, demi-numéros compris : `1.5 - Dark Fury`) est reconnu et inscrit comme numéro dans
 la collection.
+
+À chaque passage, un **journal** est écrit à la racine de `--dir` : `metadata.log` donne le lien
+TMDB de chaque film trouvé, et groupe en fin de fichier ceux qui n'en ont pas — non associés, ou
+laissés en attente d'une réponse.
 
 ```powershell
 python Movies\Metadata.py --dir "D:\Films"                    # simulation

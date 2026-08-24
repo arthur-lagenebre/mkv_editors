@@ -77,7 +77,10 @@ def _search(tmdb, title, year):
     return results
 
 
-MAX_CONTEXTS = 2          # dossier parent, puis grand-parent : au-dela, on s'egare
+# Le dossier immediat, et lui seul : au-dessus vivent les dossiers de rangement
+# d'une mediatheque ("_Marvel", "_DC"), qui ne sont pas des sagas et produisent
+# des recherches absurdes ("_Marvel Spider-Man 2").
+MAX_CONTEXTS = 1
 
 
 def usable_contexts(contexts, title, results, key="title"):
@@ -203,10 +206,28 @@ class Doubt:
     order: object = None                             # ordre de saga (1, ou "1.5")
 
 
-def choice_list(results, rivals, limit=VARIANTE_MAX):
-    """Candidats a proposer : le retenu, puis les concurrents, puis le reste."""
-    ordonnes = [results[0]] + list(rivals)
-    for item in results[1:]:
+def twin_versions(results, best, key="title"):
+    """Fiches qui portent EXACTEMENT le meme titre que celle retenue.
+
+    Remake, reboot, homonyme : "Dracula" en rend trois, "Mortal Kombat" deux, et
+    rien dans le nom du fichier ne les departage - c'est une question, pas une
+    deduction. Seules comptent celles qui pesent assez : sans ce filtre, un cinquieme
+    de la mediatheque poserait une question a cause d'un court metrage a trois votes.
+    """
+    jumeaux = [m for m in results
+               if m is not best and _norm(m.get(key)) == _norm(best.get(key))]
+    return [m for m in jumeaux if credible(m, best)]
+
+
+def choice_list(results, best, doubts, limit=VARIANTE_MAX):
+    """Candidats a proposer : les fiches en concurrence, puis le reste.
+
+    La plus votee passe en tete pour que la reponse par defaut - une simple
+    Entree - soit la plus vraisemblable des deux.
+    """
+    tete = sorted([best] + list(doubts), key=_votes, reverse=True)
+    ordonnes = list(tete)
+    for item in results:
         if item not in ordonnes:
             ordonnes.append(item)
     return ordonnes[:limit]
