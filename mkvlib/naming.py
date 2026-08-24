@@ -80,8 +80,9 @@ class MovieFolder:
     `rawname` est le nom du DOSSIER quand celui-ci ne contient que ce film - c'est
     la que vit le titre dans "Inception (2010)/film.mkv" - et le nom du FICHIER
     partout ailleurs. Dans ce second cas, `contexts` liste les dossiers au-dessus
-    du film, du plus proche au plus lointain : ils servent de renfort a la
-    recherche TMDB ("Resident Evil" pour "Animation/3 - Vendetta").
+    du film, du plus proche au plus lointain ; la recherche TMDB ne se sert que
+    du premier (voir lookup.MAX_CONTEXTS), les autres etant des dossiers de
+    rangement de la mediatheque plutot que des sagas.
     """
     folder: Path
     files: list
@@ -253,8 +254,9 @@ def best_title_match(filename, episodes):
 # --------------------------------------------------------------------------
 # Titre et annee d'un film
 # --------------------------------------------------------------------------
-# "1 - ", "01 - ", et le demi-numero des films intercalaires ("1.5 - Dark Fury").
-ORDER_RE = re.compile(r"^\s*(\d{1,3}(?:\.\d{1,2})?)\s*[-–—]\s+")   # tiret obligatoire
+# "1 - ", "01 - ", le demi-numero des films intercalaires ("1.5 - Dark Fury"), et
+# l'annee quand c'est elle qui ordonne la saga ("1990 - Les Tortues Ninja").
+ORDER_RE = re.compile(r"^\s*(\d{1,4}(?:\.\d{1,2})?)\s*[-–—]\s+")   # tiret obligatoire
 
 # Tokens de "release" a retirer du nom avant la recherche.
 QUALITY_RE = re.compile(
@@ -277,8 +279,11 @@ def parse_title_year(name):
     Un prefixe d'ordre de saga '{n} - ' est detecte et retire ('1 - Iron Man' -> ordre 1),
     demi-numeros compris : '1.5 - Dark Fury' rend l'ordre '1.5', un film intercalaire.
 
-    Une annee "nue" (sans parentheses) n'est retenue que si elle est plausible :
-    sinon 'Blade Runner 2049' serait cherche comme 'Blade Runner' sorti en 2049.
+    Une annee "nue" (sans parentheses) n'est retenue que si elle est plausible ET
+    suivie de quelque chose. Un nombre qui TERMINE le nom appartient au titre :
+    "Wonder Woman 1984", "New York 1997", "Blade Runner 2049". Une annee de
+    release, elle, est suivie des tokens de qualite ("dune.2021.1080p.WEB-DL"),
+    et une annee voulue se met entre parentheses.
     Et si le nettoyage ne laisse aucun titre, c'est que le titre EST le nombre
     ('2012') : on le rend tel quel plutot que de chercher une chaine vide.
     """
@@ -294,7 +299,10 @@ def parse_title_year(name):
     else:
         limit = max_plausible_year()
         bare = [m for m in BARE_YEAR_RE.finditer(name) if int(m.group(0)) <= limit]
-        if bare:                           # sinon, derniere annee "nue" plausible
+        # Un nombre qui TERMINE le nom appartient au titre : "Wonder Woman 1984",
+        # "New York 1997", "Death Race 2000". Une annee, elle, est suivie de
+        # quelque chose - les tokens de release - ou mise entre parentheses.
+        if bare and name[bare[-1].end():].strip():
             year, s = bare[-1].group(0), name[:bare[-1].start()]
         else:
             year, s = None, name

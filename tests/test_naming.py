@@ -33,7 +33,26 @@ class TestTitreAnnee(unittest.TestCase):
 
     def test_titre_qui_est_un_nombre(self):
         # Regression : le titre devenait vide, et TMDB etait interroge sans requete.
-        self.assertEqual(naming.parse_title_year("2012"), ("2012", "2012", None))
+        # Le nombre termine le nom : il est le titre, et n'est pas aussi une annee
+        # (le film "2012" est sorti en 2009 - filtrer la-dessus ne trouvait rien).
+        self.assertEqual(naming.parse_title_year("2012"), ("2012", None, None))
+
+    def test_annee_nue_en_fin_de_nom_appartient_au_titre(self):
+        # Regression : quatre films y perdaient leur titre, dont "Wonder Woman
+        # 1984" qui se retrouvait associe a "Wonder Woman" (2017).
+        for nom in ("Wonder Woman 1984", "New York 1997", "Death race 2000"):
+            self.assertEqual(naming.parse_title_year(nom), (nom, None, None))
+
+    def test_annee_nue_suivie_de_quelque_chose_reste_une_annee(self):
+        # Ce qui la distingue : une annee de release est suivie des tokens.
+        self.assertEqual(naming.parse_title_year("dune.2021.1080p.WEB-DL"),
+                         ("dune", "2021", None))
+
+    def test_prefixe_d_ordre_a_quatre_chiffres(self):
+        # Une saga ordonnee par annee ("1990 - Les Tortues Ninja") : sans ca, le
+        # titre disparaissait et quatre films tombaient sur des inconnus.
+        self.assertEqual(naming.parse_title_year("1990 - Les Tortues Ninja"),
+                         ("Les Tortues Ninja", None, 1990))
 
     def test_tokens_de_release_retires(self):
         self.assertEqual(naming.parse_title_year("Blade.Runner.2049.2017.1080p.BluRay.x264"),
