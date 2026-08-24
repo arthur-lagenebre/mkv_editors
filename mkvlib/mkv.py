@@ -6,6 +6,7 @@ la comparaison comme l'ecriture sont communes.
 """
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -173,6 +174,39 @@ def read_tags(path):
     return parse_tags(out) if out else set()
 
 
+# Identifiant TMDB, tel que Matroska le normalise dans ses "External Identifiers" :
+# la valeur s'ecrit "movie/1234". Inscrit dans le fichier, il survit au renommage
+# et dispense les passages suivants de toute recherche - donc de toute erreur.
+TMDB_TAG = "TMDB"
+TMDB_VALUE_RE = re.compile(r"^\s*(?:movie/)?(\d+)\s*$", re.IGNORECASE)
+
+
+def tmdb_value(movie_id):
+    """Valeur normalisee du tag TMDB pour un film."""
+    return f"movie/{movie_id}"
+
+
+def tmdb_id(tags):
+    """Identifiant TMDB lu dans les tags d'un fichier, ou None."""
+    for _, name, value in tags or ():
+        if (name or "").upper() == TMDB_TAG:
+            found = TMDB_VALUE_RE.match(value or "")
+            if found:
+                return found.group(1)
+    return None
+
+
+def has_tags(info):
+    """Le fichier declare-t-il des tags ? mkvmerge en donne le compte, pas le contenu.
+
+    C'est ce qui rend la relecture abordable : un mkvextract de plus par fichier
+    coute autant qu'un ffprobe, et sur une mediatheque jamais etiquetee il n'y
+    aurait rien a y lire.
+    """
+    return any((entry or {}).get("num_entries")
+               for entry in ((info or {}).get("global_tags") or []))
+
+
 READ_WORKERS = 8      # lectures simultanees : c'est de l'attente de sous-processus
 
 
@@ -188,13 +222,30 @@ class Reading:
 def inspect(path, with_probe=True, with_tags=False):
     """Lecture complete d'un fichier. Sans affichage : appelable en parallele.
 
-    Les tags ne sont relus que si on en a besoin (--verify, --skip-done) : c'est
-    un sous-processus de plus par fichier.
+    Les tags sont relus quand on en a besoin (--verify, --skip-done), et quand
+    le fichier en declare : ils portent alors peut-etre l'identifiant TMDB, qui
+    vaut mieux que n'importe quelle recherche. C'est un sous-processus de plus
+    par fichier, mais seulement la ou il y a quelque chose a lire.
     """
     info, note = identify(path)
     probe = annotate_bitrates(info, path) if (info and with_probe) else Probe()
-    tags = read_tags(path) if (info and with_tags) else None
+    tags = read_tags(path) if (info and (with_tags or has_tags(info))) else None
     return Reading(info, probe, tags, note)
+
+
+def progress(libelle, fait, total):
+    """Ligne de progression reecrite sur place. Muette hors terminal.
+
+    La lecture precede tout l'affichage : sur une mediatheque de 500 films, ca
+    fait de longues minutes ou le script a l'air fige. Redirige vers un fichier
+    ou dans un CI, en revanche, un retour chariot ne ferait que salir la sortie.
+    """
+    try:
+        if not sys.stdout.isatty():
+            return
+    except (AttributeError, ValueError):      # flux ferme ou remplace
+        return
+    print(f"\r  {libelle} : {fait}/{total}", end=("\n" if fait >= total else ""), flush=True)
 
 
 def inspect_all(paths, with_probe=True, with_tags=False, workers=READ_WORKERS):
@@ -208,7 +259,11 @@ def inspect_all(paths, with_probe=True, with_tags=False, workers=READ_WORKERS):
     if len(paths) < 2:
         return {p: lire(p) for p in paths}
     with ThreadPoolExecutor(max_workers=min(workers, len(paths))) as pool:
-        return dict(zip(paths, pool.map(lire, paths)))
+        lectures = {}
+        for chemin, lecture in zip(paths, pool.map(lire, paths)):
+            lectures[chemin] = lecture
+            progress("lecture des fichiers", len(lectures), len(paths))
+        return lectures
 
 
 # --------------------------------------------------------------------------
@@ -238,10 +293,52 @@ def audio_track_name(track):
     return " ".join(x for x in (codec, layout, rate) if x)
 
 
-def subtitle_track_name(track):
-    """Drapeaux actifs d'une piste de sous-titres, ou 'Full' si elle n'en a aucun."""
+# Le nom d'une piste dit parfois ce que ses drapeaux taisent : "Francais force"
+# sur une piste dont flag-forced est absent. La renommer d'apres ses seuls
+# drapeaux effacerait la derniere trace de l'information - on la remet donc la ou
+# elle appartient, dans le drapeau.
+FORCED_NAME_RE = re.compile(r"\bforc[eé]", re.IGNORECASE)
+
+
+def forced_from_name(subs):
+    """Selecteurs des sous-titres a marquer 'forced' d'apres leur nom.
+
+    Deux gardes, parce qu'un fichier ne doit jamais se retrouver avec deux pistes
+    forcees dans la meme langue - le lecteur en choisirait une au hasard :
+      - aucune piste du fichier ne porte deja le drapeau. La ou il existe, la
+        situation est declaree, et ce n'est pas a un nom de la contredire ;
+      - une seule piste par langue, la premiere rencontree.
+    """
+    if any(tr.get("properties", {}).get("forced_track") for _, tr in subs):
+        return set()
+    retenus, langues = set(), set()
+    for sel, tr in subs:
+        code = lang(tr).lower()[:2]
+        if code not in langues and FORCED_NAME_RE.search(current_name(tr)):
+            retenus.add(sel)
+            langues.add(code)
+    return retenus
+
+
+def subtitle_targets(subs, opts):
+    """[(selecteur, piste, a_forcer), ...] : l'etat vise de chaque sous-titre.
+
+    Poser un drapeau, c'est modifier des drapeaux : --no-flags s'en abstient, et
+    le nom decrit alors le fichier tel qu'il est.
+    """
+    forces = forced_from_name(subs) if opts.flags else set()
+    return [(sel, tr, sel in forces) for sel, tr in subs]
+
+
+def subtitle_track_name(track, forced=False):
+    """Drapeaux actifs d'une piste de sous-titres, ou 'Full' si elle n'en a aucun.
+
+    `forced` ajoute le drapeau qu'on s'apprete a poser d'apres le nom : le nom
+    vise decrit le fichier tel qu'il sera, pas tel qu'il est.
+    """
     p = track.get("properties", {})
-    labels = " ".join(label for key, label in SUB_FLAGS if p.get(key))
+    labels = " ".join(label for key, label in SUB_FLAGS
+                      if p.get(key) or (forced and key == "forced_track"))
     return labels or "Full"
 
 
@@ -369,20 +466,27 @@ class Report:
     total: int = 0          # fichiers vus
     diffs: int = 0          # fichiers non conformes (--verify)
     failures: int = 0       # ecritures en echec
+    skipped: int = 0        # laisses de cote : pistes ambigues, decision humaine
+    pending: int = 0        # associations restees a confirmer
 
     def __add__(self, other):
         return Report(self.matched + other.matched, self.total + other.total,
-                      self.diffs + other.diffs, self.failures + other.failures)
+                      self.diffs + other.diffs, self.failures + other.failures,
+                      self.skipped + other.skipped, self.pending + other.pending)
 
     @property
     def exit_code(self):
-        return 1 if (self.diffs or self.failures) else 0
+        return 1 if (self.diffs or self.failures or self.skipped or self.pending) else 0
 
     def epilogue(self):
         """Ligne finale a afficher quand quelque chose n'est pas passe."""
         restes = []
         if self.diffs:
             restes.append(f"{self.diffs} fichier(s) non conforme(s)")
+        if self.skipped:
+            restes.append(f"{self.skipped} non traite(s) pour pistes ambigues")
+        if self.pending:
+            restes.append(f"{self.pending} association(s) a confirmer")
         if self.failures:
             restes.append(f"{self.failures} ecriture(s) en echec")
         return " ; ".join(restes)
@@ -408,12 +512,55 @@ def track_preview_lines(info, opts):
             lines.append(f"      audio {sel} [{lang(tr)}]{mark} : "
                          f"{current_name(tr) or '(vide)'!r} -> {audio_track_name(tr) or '(vide)'!r}")
     if opts.sub_names:
-        for sel, tr in subs:
+        for sel, tr, forcer in subtitle_targets(subs, opts):
             p = tr.get("properties", {})
             flags = [label for key, label in SUB_FLAGS if p.get(key)]
-            lines.append(f"      st {sel} [{lang(tr)}] drapeaux={','.join(flags) or 'aucun'} : "
-                         f"{current_name(tr) or '(vide)'!r} -> {subtitle_track_name(tr)!r}")
+            etat = ",".join(flags) or "aucun"
+            if forcer:
+                etat += " +Forced (d'apres le nom)"
+            lines.append(f"      st {sel} [{lang(tr)}] drapeaux={etat} : "
+                         f"{current_name(tr) or '(vide)'!r} -> {subtitle_track_name(tr, forcer)!r}")
     return lines
+
+
+def track_conflicts(info, opts):
+    """Ce qui empeche d'etiqueter ce fichier sans y perdre quelque chose.
+
+    Renommer une piste d'apres ses drapeaux suppose que les drapeaux disent tout.
+    Quand c'est faux, le renommage efface ce que le nom etait seul a porter, et
+    personne ne s'en apercoit : deux sous-titres francais nommes 'Full', et le
+    forcé qui n'existe plus. Plutot que de trancher a la place de quelqu'un, on
+    dit ce qu'on a vu et on ne touche a rien.
+    """
+    audios, subs = track_selectors(info)
+    cibles = subtitle_targets(subs, opts)
+    raisons = []
+
+    if opts.sub_names:
+        deja = [sel for sel, tr in subs if tr.get("properties", {}).get("forced_track")]
+        for sel, tr, forcer in cibles:
+            if forcer or tr.get("properties", {}).get("forced_track"):
+                continue
+            if FORCED_NAME_RE.search(current_name(tr)):
+                cause = f"st {deja[0]} porte deja le drapeau" if deja else "--no-flags"
+                raisons.append(f"st {sel} : le nom dit 'force' ({current_name(tr)!r}) "
+                               f"mais {cause} -> le nom serait efface")
+
+    # Deux pistes de meme langue et de meme nom vise : apres coup, plus rien ne
+    # les distingue - ni pour un lecteur, ni pour celui qui rouvrira le fichier.
+    vises = {}
+    if opts.audio_names:
+        for sel, tr in audios:
+            vises.setdefault(("audio", lang(tr).lower()[:2], audio_track_name(tr)), []).append(sel)
+    if opts.sub_names:
+        for sel, tr, forcer in cibles:
+            vises.setdefault(("st", lang(tr).lower()[:2],
+                              subtitle_track_name(tr, forcer)), []).append(sel)
+    for (genre, code, nom), sels in vises.items():
+        if len(sels) > 1:
+            pistes = " et ".join(f"{genre} {s}" for s in sels)
+            raisons.append(f"{pistes} [{code}] : meme nom vise {nom!r}")
+    return raisons
 
 
 def verify(info, target, opts, tags=None):
@@ -438,10 +585,16 @@ def verify(info, target, opts, tags=None):
         for sel, tr in audios:
             checks.append((f"audio {sel}", current_name(tr) == audio_track_name(tr),
                            current_name(tr) or "(vide)"))
+    cibles = subtitle_targets(subs, opts)
     if opts.sub_names:
-        for sel, tr in subs:
-            checks.append((f"st {sel}", current_name(tr) == subtitle_track_name(tr),
+        for sel, tr, forcer in cibles:
+            checks.append((f"st {sel}", current_name(tr) == subtitle_track_name(tr, forcer),
                            current_name(tr) or "(vide)"))
+    for sel, tr, forcer in cibles:
+        # Un drapeau a poser est un ecart : sans ca, --skip-done sauterait le
+        # fichier et le nom serait le seul a porter l'information, encore.
+        if forcer:
+            checks.append((f"st {sel} forced", False, "absent (le nom dit 'force')"))
     if tags is not None and target.tags_xml:
         attendus = parse_tags(target.tags_xml)
         manquants, en_trop = attendus - tags, tags - attendus
@@ -489,13 +642,15 @@ def write(path, info, target, opts, tmdb):
                 sets += ["--set", f"flag-default={1 if sel == primary else 0}"]
             if sets:
                 cmd += ["--edit", f"track:{sel}"] + sets
-        for sel, tr in subs:
+        for sel, tr, forcer in subtitle_targets(subs, opts):
             sets = []
             if opts.sub_names:
-                nm = subtitle_track_name(tr)
+                nm = subtitle_track_name(tr, forcer)
                 sets += ["--set", f"name={nm}"] if nm else (["--delete", "name"] if current_name(tr) else [])
             if opts.flags:
-                sets += ["--set", "flag-default=0"]   # aucun sous-titre par defaut ; forced inchange
+                sets += ["--set", "flag-default=0"]   # aucun sous-titre par defaut
+                if forcer:                            # sinon 'forced' reste inchange
+                    sets += ["--set", "flag-forced=1"]
             if sets:
                 cmd += ["--edit", f"track:{sel}"] + sets
 

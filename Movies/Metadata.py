@@ -9,11 +9,27 @@ Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux) :
   - le titre et la DATE de sortie dans les informations de segment
     (sortie du pays de --language : fr-FR -> sortie francaise, pas la sortie d'origine)
   - le synopsis, le realisateur, les scenaristes, le casting, les genres (tags)
+  - l'IDENTIFIANT TMDB (tag "TMDB", au format Matroska "movie/1234")
   - les tags de STATISTIQUES de piste (debit, duree, nb d'images)  [--no-stats]
   - l'affiche du film comme jaquette (attachment "cover.jpg")
   - le nom des pistes AUDIO       -> codec + canaux + debit (ex. "E-AC-3 5.1 640 kb/s")
   - le nom des pistes SOUS-TITRES -> uniquement les drapeaux actifs (Forced, SDH...), ou "Full"
   - les DRAPEAUX 'par defaut'     -> une seule piste audio par defaut (la FR), aucun sous-titre
+  - le drapeau FORCED             -> pose sur un sous-titre dont le NOM dit "force" alors que le
+    drapeau manque (sinon, le renommer d'apres ses drapeaux effacerait l'information). Une seule
+    piste par langue, et rien si le fichier declare deja un sous-titre force.  [--no-flags]
+
+Un film dont une piste est AMBIGUE n'est pas traite du tout - pas meme ses autres fichiers :
+un nom qui dit "force" sans drapeau transposable, ou deux pistes de meme langue qui
+porteraient le meme nom (deux "Full" francais, que plus rien ne distingue). Rien n'est
+modifie, la raison est affichee sous [NON TRAITE], et le bilan les compte.
+
+Quand plusieurs fiches TMDB ecrivent le MEME titre autrement ("Les Quatre Fantastiques" et
+"Les 4 Fantastiques"), le film est mis de cote et la QUESTION est posee A LA FIN du passage,
+dans le terminal : candidats numerotes, Entree garde le premier, i laisse le film de cote, q
+arrete les questions. Une suite ("Iron Man 2") n'est pas une variante et ne declenche rien.
+Hors terminal (sortie redirigee, CI), les films restent de cote plutot que de bloquer le
+passage ; --no-ask retablit l'ancien comportement, le premier resultat sans rien demander.
 
 Dependances EXTERNES (dans le PATH) : mkvpropedit + mkvmerge + mkvextract (MKVToolNix),
 ffprobe (FFmpeg).
@@ -23,14 +39,31 @@ Le code partage avec les autres scripts du depot vit dans mkvlib/ (a la racine).
 Cle TMDB : ligne TMDB_KEY=... du fichier .env, a la racine du depot. C'est la seule
 source, et le meme .env sert a tous les scripts : la cle n'est ecrite qu'une fois.
 
-Structure attendue : soit un sous-dossier par film (les .mkv dedans), soit des .mkv a plat
-dans --dir. Un film coupe en plusieurs fichiers (CD1/CD2) recoit les memes metadonnees
-partout ; les fichiers nettement plus petits du dossier (bande-annonce, making-of) sont
-laisses de cote. Le titre et l'annee sont lus dans le nom (dossier ou fichier), ex. "Inception (2010)".
+Structure libre : --dir est parcouru RECURSIVEMENT, aussi profond qu'il y a des dossiers.
+Seuls les .mkv sont des films - un dossier ne compte ni ne se traite jamais comme un film,
+il ne fait que ranger. Un dossier qui ne contient qu'un film et rien en dessous lui prete
+son nom ("Inception (2010)/film.mkv") ; partout ailleurs c'est le nom du FICHIER qui parle,
+et les dossiers au-dessus servent de RENFORT a la recherche, du plus proche au plus lointain :
+"Resident Evil/2 - Apocalypse.mkv" cherche "Apocalypse" (qui rend "Amour Apocalypse"...) puis
+"Resident Evil Apocalypse", et ne retient le renfort que si le titre trouve contient a la fois
+le dossier et ce qu'on cherchait.
+Un film coupe en plusieurs fichiers (CD1/CD2) recoit les memes metadonnees partout ; les
+bandes-annonces et making-of poses a cote sont reconnus A LEUR NOM et laisses de cote, comme
+les dossiers de bonus (Extras, Featurettes...). Le poids des fichiers ne decide de rien : un
+dessin anime de 1 Go est un film autant qu'un remux de 28 Go.
 Un prefixe d'ordre de saga "{n} - " est detecte et retire pour la recherche ("1 - Iron Man"
--> recherche "Iron Man") ; l'ordre est inscrit comme numero dans la collection (tag PART_NUMBER).
-Si la recherche se trompe sur un titre, epingle l'identifiant dans le nom du dossier -
-"Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - il sera respecte a chaque passage.
+-> recherche "Iron Man"), demi-numeros compris ("1.5 - Dark Fury") ; l'ordre est inscrit comme
+numero dans la collection (tag PART_NUMBER).
+A titre egal, TMDB classe par POPULARITE : une fiche portant EXACTEMENT le titre cherche passe
+donc devant ("Blade" doit rendre Blade, pas Blade II).
+L'identifiant TMDB retenu est INSCRIT DANS LE FILM : au passage suivant, il est relu et plus
+rien n'est cherche - l'association survit donc au renommage, et ne peut plus se tromper deux
+fois de la meme facon. La relecture ne coute un sous-processus de plus que sur les fichiers
+qui declarent des tags : une mediatheque jamais etiquetee ne paie rien.
+Ordre de priorite : --tmdb-id, puis l'identifiant epingle dans le NOM, puis celui lu dans le
+FICHIER, puis la recherche. Si un passage a inscrit le mauvais identifiant, corrige-le en
+epinglant le bon dans le nom - "Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - le
+passage suivant le reecrira dans le fichier.
 
 Usage :
   python Metadata.py --dir "D:\Films"                         # simulation (n'ecrit rien)
@@ -38,7 +71,7 @@ Usage :
   python Metadata.py --dir "D:\Films\Inception (2010)" --tmdb-id 27205 --apply   # force l'id (1 film)
   python Metadata.py --dir "D:\Films" --verify                # verifie seulement
 
-Options : --apply --verify --skip-done --artwork --recap --no-tag --no-cache
+Options : --apply --verify --skip-done --artwork --recap --no-tag --no-cache --no-ask
           --no-cover --no-date --no-audio-names --no-sub-names --no-flags --no-stats
           --tmdb-id (force, si un seul film) --language (defaut fr-FR) --image-size (w780)
 
@@ -74,6 +107,10 @@ def build_movie_tags_xml(movie, max_actors=20):
         blocks.append(mkv.tag_block(70, lines))
 
     lines = [mkv.simple("TITLE", movie.get("title", ""))]
+    if movie.get("id"):
+        # L'association elle-meme, inscrite dans le film : au passage suivant,
+        # plus rien n'est cherche, donc plus rien ne peut se tromper.
+        lines.append(mkv.simple(mkv.TMDB_TAG, mkv.tmdb_value(movie["id"])))
     if movie.get("overview"):
         lines.append(mkv.simple("SYNOPSIS", movie["overview"]))
         lines.append(mkv.simple("SUMMARY", movie["overview"]))
@@ -132,12 +169,33 @@ def process_file(path, lecture, movie, args, opts, tmdb):
     return 0, (1 if code else 0)
 
 
+def report_conflicts(entry, lectures, opts):
+    """Affiche ce qui bloque l'etiquetage du film, et dit si ca bloque.
+
+    Un film dont une piste est ambigue n'est pas traite DU TOUT - pas meme ses
+    autres fichiers : a moitie etiquete, il aurait l'air fait, et le souci
+    passerait a la trappe au passage suivant.
+    """
+    soucis = [(path, mkv.track_conflicts(lectures[path].info, opts)) for path in entry.files]
+    if not any(raisons for _, raisons in soucis):
+        return False
+    print("      [NON TRAITE] rien n'a ete modifie ; ces pistes demandent une decision :")
+    for path, raisons in soucis:
+        for raison in raisons:
+            prefixe = f"{path.name} : " if len(entry.files) > 1 else ""
+            print(f"         - {prefixe}{raison}")
+    return True
+
+
 def process_movie(entry, movie, lectures, args, opts, tmdb):
     """Traite tous les fichiers d'un film et retourne son Report.
 
     Un film peut occuper plusieurs fichiers : chacun recoit les memes metadonnees,
     et son nom est rappele pour qu'on sache lequel parle.
     """
+    if report_conflicts(entry, lectures, opts):
+        return mkv.Report(matched=1, total=1, skipped=1)
+
     report = mkv.Report(matched=1, total=1)
     for path in entry.files:
         if len(entry.files) > 1:
@@ -159,41 +217,83 @@ def write_artwork(entry, movie, args, tmdb):
     print(f"      affiche (EN) : {artwork.write_poster(poster, entry.folder, apply, tmdb)}")
 
 
-def resolve_movie(rawname, args, tmdb, single):
-    """Trouve le film TMDB correspondant a un nom de dossier/fichier, ou None."""
-    pinned, rawname = naming.extract_tmdb_id(rawname)
-    title, year, order = naming.parse_title_year(rawname)
-    if args.tmdb_id and single:
-        movie_id = args.tmdb_id
-    elif pinned:
-        movie_id = pinned          # annonce plus bas, une fois le titre connu
-    else:
-        try:
-            results = tmdb.search_movie(title, year)
-            if not results and year:
-                results = tmdb.search_movie(title, None)
-        except TmdbError as e:
-            print(f"  echec recherche TMDB : {e}\n")
-            return None
-        if not results:
-            print(f"  [NON ASSOCIE] recherche '{title}'"
-                  + (f" ({year})" if year else "") + " -> aucun resultat\n")
-            return None
-        best, notes = lookup.pick_result(results, title)
-        movie_id = best["id"]
-        print(f"  recherche : '{title}'" + (f" ({year})" if year else "")
-              + (f" [ordre {order}]" if order else "")
-              + f" -> {lookup.describe(best)}")
-        for note in notes:
-            print(f"  /!\\ {note}")
+@dataclass
+class Library:
+    """Ce qui s'accumule au fil du passage, au-dela du Report."""
+    resolved: list          # fiches TMDB retenues, pour la fiche recap
+    seen: dict              # {id TMDB: film deja vu} - detection des doublons
+    lectures: dict          # {chemin: Reading}
 
+
+def handle_movie(entry, movie, library, args, opts, tmdb):
+    """Traite un film dont l'association est arretee. Retourne son Report."""
+    jumeau = library.seen.setdefault(movie.get("id"), entry.display)
+    if jumeau != entry.display:
+        # Deux dossiers pour un meme film : les deux sont etiquetes (une VF et
+        # une 4K le meritent), mais le recap n'en montrera qu'une vignette.
+        print(f"  [DOUBLON] meme film que '{jumeau}' -> les deux seront traites")
+    library.resolved.append(movie)
+    if args.no_tag:
+        print("      film non modifie (--no-tag)")
+        report = mkv.Report(matched=1, total=1)
+    else:
+        report = process_movie(entry, movie, library.lectures, args, opts, tmdb)
+    if args.artwork and entry.owns_folder:
+        write_artwork(entry, movie, args, tmdb)
+    return report
+
+
+def resolve_pending(attente, library, args, opts, tmdb):
+    """Pose les questions mises de cote, puis traite les films confirmes.
+
+    Les questions attendent la fin pour ne pas hacher le passage : le script
+    deroule d'abord tout ce qu'il sait faire seul, et n'arbitre qu'ensuite.
+    """
+    print(f"=== {len(attente)} association(s) a confirmer ===")
+    if not cli.can_ask():
+        print("  Terminal non interactif : ces films sont laisses de cote.")
+        print("  Relance dans un terminal, epingle l'id dans le nom, ou passe")
+        print("  --no-ask pour accepter le premier resultat sans demander.\n")
+        for entry, doute in attente:
+            print(f"  [A CONFIRMER] {entry.display} -> {lookup.describe(doute.candidates[0])}")
+        return mkv.Report(matched=len(attente), total=len(attente), pending=len(attente))
+
+    print("  Entree = garder le 1er, i = laisser de cote, q = arreter les questions.\n")
+    report, arrete = mkv.Report(), False
+    for numero, (entry, doute) in enumerate(attente, 1):
+        print(f"[{numero}/{len(attente)}] {entry.display}   (recherche : '{doute.query}')")
+        for note in doute.notes:
+            print(f"      /!\\ {note}")
+        for rang, candidat in enumerate(doute.candidates, 1):
+            print(f"      {rang}) {lookup.describe(candidat)}"
+                  + ("   (defaut)" if rang == 1 else ""))
+        choix = cli.ASK_SKIP if arrete else cli.ask_choice(len(doute.candidates))
+        if choix == cli.ASK_STOP:
+            arrete, choix = True, cli.ASK_SKIP
+        if choix == cli.ASK_SKIP:
+            print("      [NON TRAITE] association non confirmee\n")
+            report += mkv.Report(matched=1, total=1, pending=1)
+            continue
+        candidat = doute.candidates[choix]
+        movie = movie_details(candidat["id"], doute.order, args, tmdb)
+        if movie is None:
+            report += mkv.Report(total=1)
+            continue
+        print(f"      -> {lookup.describe(candidat)}")
+        print(f"      pour ne plus avoir la question : ajoute "
+              f"' [tmdbid-{candidat['id']}]' au nom")
+        report += handle_movie(entry, movie, library, args, opts, tmdb)
+        print()
+    return report
+
+
+def movie_details(movie_id, order, args, tmdb):
+    """Fiche complete d'un film : credits, genres, et date de sortie NATIONALE."""
     try:
         movie = tmdb.movie(movie_id)
     except TmdbError as e:
         print(f"  echec details TMDB : {e}\n")
         return None
-    if pinned and movie_id == pinned:
-        print(f"  id epingle dans le nom : {lookup.describe(movie)}")
     movie["_order"] = order
 
     # Sortie nationale (fr-FR -> FR) : sans ca, TMDB donne la sortie d'origine.
@@ -203,6 +303,65 @@ def resolve_movie(rawname, args, tmdb, single):
     if local:
         movie["release_date"], movie["_date_region"] = local, region
     return movie
+
+
+def tag_movie_id(entry, lectures):
+    """Identifiant TMDB deja inscrit dans les fichiers du film, ou None."""
+    for path in entry.files:
+        lecture = lectures.get(path)
+        ident = mkv.tmdb_id(lecture.tags) if lecture else None
+        if ident:
+            return ident
+    return None
+
+
+def resolve_movie(rawname, args, tmdb, single, contexts=(), tag_id=None):
+    """(film, doute) pour un nom de dossier/fichier. (None, None) si rien ne colle.
+
+    `contexts` liste les dossiers au-dessus du film, du plus proche au plus
+    lointain : ils servent de renfort a la recherche, pas de remplacants.
+
+    Un `doute` non nul veut dire que plusieurs fiches ecrivent le meme titre :
+    le film n'est alors PAS charge, et la question est posee en fin de passage.
+    """
+    pinned, rawname = naming.extract_tmdb_id(rawname)
+    title, year, order = naming.parse_title_year(rawname)
+    if args.tmdb_id and single:
+        return movie_details(args.tmdb_id, order, args, tmdb), None
+    if pinned:
+        movie = movie_details(pinned, order, args, tmdb)
+        if movie:
+            print(f"  id epingle dans le nom : {lookup.describe(movie)}")
+        return movie, None
+    if tag_id:
+        # Le nom passe avant : c'est le seul moyen de corriger un identifiant
+        # qu'un passage precedent aurait inscrit de travers.
+        movie = movie_details(tag_id, order, args, tmdb)
+        if movie:
+            print(f"  id lu dans le fichier : {lookup.describe(movie)}")
+        return movie, None
+
+    try:
+        results, query = lookup.search_with_context(tmdb, title, year, contexts)
+    except TmdbError as e:
+        print(f"  echec recherche TMDB : {e}\n")
+        return None, None
+    if not results:
+        print(f"  [NON ASSOCIE] recherche '{title}'"
+              + (f" ({year})" if year else "") + " -> aucun resultat\n")
+        return None, None
+    best, notes = lookup.pick_result(results, query)
+    print(f"  recherche : '{query}'" + (f" ({year})" if year else "")
+          + (f" [ordre {order}]" if order else "")
+          + f" -> {lookup.describe(best)}")
+    for note in notes:
+        print(f"  /!\\ {note}")
+
+    rivaux = lookup.rival_versions(query, results)
+    if rivaux and not args.no_ask:
+        return None, lookup.Doubt(query=query, notes=notes, order=order,
+                                  candidates=lookup.choice_list(results, rivaux))
+    return movie_details(best["id"], order, args, tmdb), None
 
 
 # ----------------------------------------------------------------------------
@@ -374,11 +533,13 @@ def write_recap(root_dir, movies, args, tmdb):
 def parse_args():
     ap = argparse.ArgumentParser(description="Etiquette des films .mkv depuis TMDB (en francais).")
     ap.add_argument("--dir", required=True,
-                    help="Dossier de films (un sous-dossier par film, ou des .mkv a plat)")
+                    help="Dossier de films, parcouru recursivement (dossiers de saga compris)")
     ap.add_argument("--tmdb-id", help="Force l'id TMDB (utile si --dir ne contient qu'un seul film)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
     ap.add_argument("--no-cache", action="store_true",
                     help="Ignore le cache des reponses TMDB et le rafraichit")
+    ap.add_argument("--no-ask", action="store_true",
+                    help="Ne pose aucune question : garde le 1er resultat TMDB, comme avant")
     ap.add_argument("--apply", action="store_true", help="Applique reellement (defaut : simulation)")
     ap.add_argument("--verify", action="store_true", help="Verifie seulement (aucune ecriture)")
     ap.add_argument("--skip-done", action="store_true", help="Saute les films deja conformes")
@@ -410,7 +571,7 @@ def main():
 
     print(f"=== {cli.mode_label(args)} ===   source : TMDB {args.language}\n")
 
-    movies, foldered = naming.find_movies(args.dir)
+    movies = naming.find_movies(args.dir)
     if not movies:
         print(f"Aucun .mkv trouve dans : {args.dir}")
         return
@@ -420,8 +581,8 @@ def main():
     if args.no_tag and not (args.artwork or args.recap):
         print("Astuce : --no-tag sans --artwork ni --recap ne produit rien. "
               "Ajoute --artwork et/ou --recap.\n")
-    if args.artwork and not foldered:
-        print("Note : --artwork sans effet ici (les .mkv sont a plat, pas un dossier par film).\n")
+    if args.artwork and not any(e.owns_folder for e in movies):
+        print("Note : --artwork sans effet ici : aucun dossier ne contient un seul film.\n")
 
     # Toutes les lectures d'un coup, en parallele : chaque fichier coute deux a
     # trois sous-processus qu'on ne fait qu'attendre, et rien la-dedans ne depend
@@ -432,28 +593,29 @@ def main():
         lectures = mkv.inspect_all(fichiers, args.probe,
                                    with_tags=args.verify or args.skip_done)
 
-    report, resolved, deja_vus = mkv.Report(), [], {}
+    report, library = mkv.Report(), Library([], {}, lectures)
+    attente = []
     for entry in movies:
-        print(f"--- {entry.rawname} ---")
-        movie = resolve_movie(entry.rawname, args, tmdb, single=len(movies) == 1)
+        print(f"--- {entry.display} ---")
+        movie, doute = resolve_movie(entry.rawname, args, tmdb, single=len(movies) == 1,
+                                     contexts=entry.contexts,
+                                     tag_id=tag_movie_id(entry, lectures))
+        if doute is not None:
+            print("      [A CONFIRMER] plusieurs versions portent ce titre "
+                  "-> question en fin de passage")
+            attente.append((entry, doute))
+            print()
+            continue
         if movie is None:
             report += mkv.Report(total=1)
             continue
-        jumeau = deja_vus.setdefault(movie.get("id"), entry.rawname)
-        if jumeau != entry.rawname:
-            # Deux dossiers pour un meme film : les deux sont etiquetes (une VF et
-            # une 4K le meritent), mais le recap n'en montrera qu'une vignette.
-            print(f"  [DOUBLON] meme film que '{jumeau}' -> les deux seront traites")
-        resolved.append(movie)
-        if args.no_tag:
-            print("      film non modifie (--no-tag)")
-            report += mkv.Report(matched=1, total=1)
-        else:
-            report += process_movie(entry, movie, lectures, args, opts, tmdb)
-        if args.artwork and foldered:
-            write_artwork(entry, movie, args, tmdb)
+        report += handle_movie(entry, movie, library, args, opts, tmdb)
         print()
 
+    if attente:
+        report += resolve_pending(attente, library, args, opts, tmdb)
+
+    resolved = library.resolved
     print(f"TOTAL : {report.matched}/{report.total} film(s) associe(s).")
     if args.recap and resolved:
         write_recap(args.dir, resolved, args, tmdb)

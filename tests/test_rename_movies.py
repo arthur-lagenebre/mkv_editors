@@ -49,10 +49,10 @@ class RenameMoviesTestCase(unittest.TestCase):
     def lancer(self, apply=True, pin_id=False, tmdb=None):
         tmdb = tmdb or FauxTmdb()
         args = types.SimpleNamespace(apply=apply, pin_id=pin_id)
-        movies, foldered = naming.find_movies(self.racine)
+        movies = naming.find_movies(self.racine)
         sortie = io.StringIO()
         with redirect_stdout(sortie):
-            tally = renommeur.rename_library(movies, foldered, args, tmdb)
+            tally = renommeur.rename_library(movies, args, tmdb)
         self.sortie = sortie.getvalue()
         return tally, sorted(p.name for p in self.racine.iterdir()), tmdb
 
@@ -142,6 +142,28 @@ class TestRenommage(RenameMoviesTestCase):
         self.assertEqual(tally.named, 0)
         self.assertIn("NON ASSOCIE", self.sortie)
 
+
+    def test_dossier_de_saga_renomme_les_films_pas_le_dossier(self):
+        # Le dossier de saga n'est pas un film : il garde son nom, et ce sont les
+        # .mkv qu'il contient qui prennent le leur.
+        (self.racine / "Saga").mkdir()
+        for nom in ("1 - dune 2021.mkv", "2 - dune bis.mkv"):
+            (self.racine / "Saga" / nom).write_text("x", encoding="utf-8")
+        tally, contenu, _ = self.lancer()
+        self.assertEqual(contenu, ["Saga"])
+        self.assertEqual(sorted(p.name for p in (self.racine / "Saga").iterdir()),
+                         ["1 - Dune (2021).mkv", "2 - Dune (2021).mkv"])
+        self.assertEqual((tally.named, tally.total), (2, 2))
+
+    def test_film_seul_dans_son_dossier_renomme_le_dossier(self):
+        # Regression : la recursion ne doit pas faire perdre le cas courant.
+        (self.racine / "Saga").mkdir()
+        (self.racine / "Saga" / "dune 2021").mkdir()
+        (self.racine / "Saga" / "dune 2021" / "film.mkv").write_text("x", encoding="utf-8")
+        _, contenu, _ = self.lancer()
+        self.assertEqual(contenu, ["Saga"])
+        self.assertEqual([p.name for p in (self.racine / "Saga").iterdir()],
+                         ["Dune (2021)"])
 
 if __name__ == "__main__":
     unittest.main()

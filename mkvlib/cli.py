@@ -79,6 +79,46 @@ def check_dir(path):
     return dossier
 
 
+ASK_SKIP, ASK_STOP = "ignorer", "arreter"
+
+
+def can_ask():
+    """Vrai si une question a une chance d'obtenir une reponse.
+
+    Sortie redirigee vers un fichier, execution dans un CI, entree fermee : la
+    question ne serait vue par personne et le script attendrait indefiniment.
+    Mieux vaut alors laisser le cas de cote que de bloquer un passage entier.
+    """
+    try:
+        return bool(sys.stdin and sys.stdin.isatty() and sys.stdout.isatty())
+    except (AttributeError, ValueError):         # flux ferme ou remplace
+        return False
+
+
+def ask_choice(nombre, defaut=0):
+    """Indice choisi parmi `nombre` propositions, ou ASK_SKIP / ASK_STOP.
+
+    Entree vide = le defaut. Une reponse incomprise repose la question plutot
+    que de decider a la place de quelqu'un - c'est tout l'interet de demander.
+    """
+    while True:
+        try:
+            reponse = input(f"      choix [{defaut + 1}] : ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return ASK_STOP
+        if not reponse:
+            return defaut
+        if reponse in ("i", "ignorer"):
+            return ASK_SKIP
+        if reponse in ("q", "quitter", "arreter"):
+            return ASK_STOP
+        if reponse.isdigit() and 1 <= int(reponse) <= nombre:
+            return int(reponse) - 1
+        print(f"      reponse non comprise : un numero de 1 a {nombre}, "
+              "i pour laisser de cote, q pour arreter les questions.")
+
+
 def mode_label(args, simulation="rien ne sera ecrit ; ajoute --apply pour appliquer"):
     """Libelle du mode courant, pour la banniere affichee au demarrage."""
     if getattr(args, "verify", False):

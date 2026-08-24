@@ -7,10 +7,11 @@ import types
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from mkvlib import mkv
+from mkvlib import lookup, mkv, naming
 from mkvlib.tmdb import TmdbError
 from Movies import Metadata as films
 from TV_Shows import Metadata as series
@@ -113,11 +114,203 @@ class TestFilms(unittest.TestCase):
         film = root.findall("Tag")[1]
         self.assertEqual(film.find("Simple[Name='GENRE']/String").text, "Action, Science-Fiction")
 
+    def test_l_identifiant_est_inscrit_dans_le_film(self):
+        # Pour que le passage suivant n ait plus rien a chercher.
+        root = ElementTree.fromstring(films.build_movie_tags_xml({"id": 314,
+                                                                  "title": "Catwoman"}))
+        film = root.findall("Tag")[-1]
+        self.assertEqual(film.find("Simple[Name='TMDB']/String").text, "movie/314")
     def test_film_hors_saga(self):
         movie = {"title": "Heat", "credits": {}}
         root = ElementTree.fromstring(films.build_movie_tags_xml(movie))
         self.assertEqual([n.text for n in root.findall("./Tag/Targets/TargetTypeValue")], ["50"])
 
+
+def sous_titre(langue, nom):
+    """Piste de sous-titres minimale, telle que mkvmerge la decrit."""
+    return {"type": "subtitles", "codec": "",
+            "properties": {"language": langue, "track_name": nom}}
+
+class TestFilmNonTraite(unittest.TestCase):
+    """Une piste ambigue arrete tout le film, et la raison est dite."""
+
+    AMBIGU = {"tracks": [sous_titre("eng", "English"), sous_titre("eng", "English")]}
+    SAIN = {"tracks": [sous_titre("fre", "Français forcé"),
+                       sous_titre("fre", "Français complet")]}
+
+    def process(self, *infos):
+        """Lance process_movie sur un film d un fichier par info donnee."""
+        args = types.SimpleNamespace(verify=False, apply=False, skip_done=False)
+        chemins = [Path(f"cd{i}.mkv") for i, _ in enumerate(infos, 1)]
+        entry = naming.MovieFolder(folder=Path("."), files=chemins, rawname="Film")
+        lectures = {p: mkv.Reading(info=info) for p, info in zip(chemins, infos)}
+        sortie = io.StringIO()
+        with redirect_stdout(sortie):
+            report = films.process_movie(entry, {"title": "Film"}, lectures,
+                                         args, OPTS, None)
+        return report, sortie.getvalue()
+
+    def test_film_ambigu_laisse_intact(self):
+        report, sortie = self.process(self.AMBIGU)
+        self.assertEqual((report.matched, report.total, report.skipped), (1, 1, 1))
+        self.assertIn("[NON TRAITE]", sortie)
+        self.assertIn("st s1 et st s2 [en]", sortie)
+        self.assertNotIn(" -> ", sortie)          # aucun renommage n a ete prepare
+
+    def test_film_sain_traite_normalement(self):
+        report, sortie = self.process(self.SAIN)
+        self.assertEqual(report.skipped, 0)
+        self.assertIn("+Forced", sortie)
+
+    def test_un_seul_fichier_ambigu_bloque_le_film_entier(self):
+        # A moitie etiquete, le film aurait l air fait : le souci passerait a la
+        # trappe au passage suivant.
+        report, sortie = self.process(self.SAIN, self.AMBIGU)
+        self.assertEqual(report.skipped, 1)
+        self.assertIn("cd2.mkv : st s1 et st s2", sortie)
+        self.assertNotIn("+Forced", sortie)       # cd1.mkv non plus n a ete prepare
+
+    def test_le_bilan_le_compte_et_le_signale(self):
+        report = mkv.Report(matched=1, total=1) + mkv.Report(matched=1, total=1, skipped=1)
+        self.assertEqual((report.total, report.skipped), (2, 1))
+        self.assertIn("1 non traite(s)", report.epilogue())
+        self.assertEqual(report.exit_code, 1)
+
+class FauxTmdbFilms:
+    """Rend une fiche par id, et une recherche fixe. Note ce qui a ete demande."""
+
+    def __init__(self, resultats=()):
+        self.resultats = list(resultats)
+        self.details, self.recherches = [], []
+
+    def search_movie(self, title, year=None):
+        self.recherches.append(title)
+        return list(self.resultats)
+
+    def movie(self, movie_id, language=None):
+        self.details.append(int(movie_id))
+        return {"id": int(movie_id), "title": f"Film {movie_id}"}
+
+    def local_release_date(self, movie_id, region):
+        return None
+
+
+class TestQuestionsDeFinDePassage(unittest.TestCase):
+    """Une association douteuse attend la fin du passage, et une reponse."""
+
+    CANDIDATS = [{"id": 22059, "title": "Les Quatre Fantastiques",
+                  "release_date": "1994-01-01"},
+                 {"id": 9738, "title": "Les 4 Fantastiques",
+                  "release_date": "2005-07-06"}]
+
+    def setUp(self):
+        self.args = types.SimpleNamespace(no_tag=True, artwork=False, apply=False,
+                                          verify=False, skip_done=False, no_ask=False,
+                                          language="fr-FR", no_date=True, tmdb_id=None)
+
+    def attente(self, combien=1):
+        sortie = []
+        for i in range(combien):
+            entry = naming.MovieFolder(folder=Path("."), files=[Path(f"f{i}.mkv")],
+                                       rawname=f"Les Quatre Fantastiques {i}")
+            sortie.append((entry, lookup.Doubt(query="Les Quatre Fantastiques",
+                                               candidates=list(self.CANDIDATS))))
+        return sortie
+
+    def poser(self, reponses, combien=1, interactif=True):
+        """Joue resolve_pending avec des reponses prefabriquees."""
+        tmdb = FauxTmdbFilms()
+        library = films.Library([], {}, {})
+        restantes, demandes = list(reponses), []
+
+        def faux_choix(nombre, defaut=0):
+            demandes.append(nombre)
+            return restantes.pop(0)
+
+        sortie = io.StringIO()
+        with mock.patch.object(films.cli, "can_ask", lambda: interactif):
+            with mock.patch.object(films.cli, "ask_choice", faux_choix):
+                with redirect_stdout(sortie):
+                    report = films.resolve_pending(self.attente(combien), library,
+                                                   self.args, OPTS, tmdb)
+        return report, sortie.getvalue(), tmdb, demandes
+
+    def test_la_reponse_choisit_la_fiche(self):
+        report, sortie, tmdb, _ = self.poser([1])
+        self.assertEqual(tmdb.details, [9738])          # la 2e, pas la 1re
+        self.assertEqual((report.matched, report.pending), (1, 0))
+        self.assertIn("tmdbid-9738", sortie)            # comment ne plus la poser
+
+    def test_entree_vide_garde_le_defaut(self):
+        _, _, tmdb, _ = self.poser([0])
+        self.assertEqual(tmdb.details, [22059])
+
+    def test_ignorer_laisse_le_film_intact(self):
+        report, sortie, tmdb, _ = self.poser([films.cli.ASK_SKIP])
+        self.assertEqual(tmdb.details, [])
+        self.assertEqual((report.matched, report.pending), (1, 1))
+        self.assertIn("[NON TRAITE]", sortie)
+
+    def test_arreter_saute_toutes_les_suivantes(self):
+        report, _, tmdb, demandes = self.poser([films.cli.ASK_STOP], combien=3)
+        self.assertEqual(len(demandes), 1)              # une seule question posee
+        self.assertEqual((report.pending, tmdb.details), (3, []))
+
+    def test_terminal_non_interactif_ne_bloque_pas(self):
+        # Sortie redirigee : la question ne serait vue par personne.
+        report, sortie, tmdb, demandes = self.poser([], combien=2, interactif=False)
+        self.assertEqual((demandes, tmdb.details), ([], []))
+        self.assertEqual((report.total, report.pending), (2, 2))
+        self.assertIn("non interactif", sortie)
+
+    def resoudre(self):
+        tmdb = FauxTmdbFilms(self.CANDIDATS)
+        with redirect_stdout(io.StringIO()):
+            movie, doute = films.resolve_movie("Les Quatre Fantastiques", self.args,
+                                               tmdb, single=False)
+        return movie, doute, tmdb
+
+    def test_no_ask_garde_le_premier_resultat(self):
+        # L echappatoire pour les scripts : le comportement d avant.
+        self.args.no_ask = True
+        movie, doute, _ = self.resoudre()
+        self.assertIsNone(doute)
+        self.assertEqual(movie["id"], 22059)
+
+    def test_sans_no_ask_la_question_est_mise_de_cote(self):
+        movie, doute, tmdb = self.resoudre()
+        self.assertIsNone(movie)                        # pas encore charge
+        self.assertEqual(tmdb.details, [])              # ni meme interroge
+        self.assertEqual([c["id"] for c in doute.candidates], [22059, 9738])
+
+class TestIdentifiantLuDansLeFilm(unittest.TestCase):
+    """Un identifiant inscrit dans le .mkv dispense de toute recherche."""
+
+    def setUp(self):
+        self.args = types.SimpleNamespace(no_ask=False, language="fr-FR",
+                                          no_date=True, tmdb_id=None)
+
+    def resoudre(self, rawname, tag_id):
+        tmdb = FauxTmdbFilms([{"id": 999, "title": "Autre chose"}])
+        with redirect_stdout(io.StringIO()) as sortie:
+            movie, _ = films.resolve_movie(rawname, self.args, tmdb, single=False,
+                                           tag_id=tag_id)
+        return movie, tmdb, sortie.getvalue()
+
+    def test_l_identifiant_du_fichier_evite_la_recherche(self):
+        movie, tmdb, sortie = self.resoudre("zzz nom illisible", "314")
+        self.assertEqual(movie["id"], 314)
+        self.assertEqual(tmdb.recherches, [])          # rien n a ete cherche
+        self.assertIn("id lu dans le fichier", sortie)
+
+    def test_le_nom_epingle_prime_sur_le_fichier(self):
+        # Seul moyen de corriger un identifiant inscrit de travers.
+        movie, tmdb, _ = self.resoudre("Un film [tmdbid-27205]", "314")
+        self.assertEqual((movie["id"], tmdb.recherches), (27205, []))
+
+    def test_sans_identifiant_la_recherche_reprend(self):
+        movie, tmdb, _ = self.resoudre("Un film", None)
+        self.assertEqual((movie["id"], tmdb.recherches), (999, ["Un film"]))
 
 class TestRecap(unittest.TestCase):
     SAISON = {"season_number": 1, "name": "Saison 1", "episodes": [

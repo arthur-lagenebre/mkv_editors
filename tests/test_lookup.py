@@ -36,6 +36,50 @@ class TestChoixDuResultat(unittest.TestCase):
         self.assertEqual(len(notes), 1)
         self.assertIn("id 2", notes[0])
 
+    def test_titre_exact_prefere_a_la_popularite(self):
+        # TMDB classe par popularite : "Blade" rend "Blade II" en premier.
+        resultats = [{"id": 36586, "title": "Blade II", "vote_count": 5349},
+                     {"id": 36647, "title": "Blade", "vote_count": 6892}]
+        best, _ = lookup.pick_result(resultats, "Blade")
+        self.assertEqual(best["id"], 36647)
+
+    def test_titre_exact_mais_inconnu_ne_prend_pas_la_place(self):
+        # Regression : "The Fast and the Furious" (1954, 41 votes) chassait celui
+        # de 2001 (11 029 votes). Un titre exact porte par un inconnu ne vaut rien.
+        resultats = [{"id": 9799, "title": "Fast and Furious", "vote_count": 11029},
+                     {"id": 20174, "title": "The Fast and the Furious", "vote_count": 41}]
+        best, _ = lookup.pick_result(resultats, "The Fast and the Furious")
+        self.assertEqual(best["id"], 9799)
+    def test_un_classique_moins_vote_que_sa_suite_passe_quand_meme(self):
+        # Mad Max (1979, 5 066 votes) face a Fury Road (24 444) : un cinquieme,
+        # mais c est bien le film demande. Le seuil doit le laisser passer.
+        resultats = [{"id": 76341, "title": "Mad Max : Fury Road", "vote_count": 24444},
+                     {"id": 9659, "title": "Mad Max", "vote_count": 5066}]
+        best, _ = lookup.pick_result(resultats, "Mad Max")
+        self.assertEqual(best["id"], 9659)
+
+    def test_un_homonyme_confidentiel_ne_passe_pas(self):
+        # "Le retour du roi" (1980, 223 votes) face au Seigneur des anneaux (27 139).
+        resultats = [{"id": 122, "title": "Le Seigneur des anneaux : Le Retour du roi",
+                      "vote_count": 27139},
+                     {"id": 1361, "title": "Le retour du roi", "vote_count": 223}]
+        best, _ = lookup.pick_result(resultats, "Le retour du roi")
+        self.assertEqual(best["id"], 122)
+    def test_sans_titre_exact_le_premier_reste(self):
+        resultats = [{"id": 1, "title": "Blade II"}, {"id": 2, "title": "Blade Runner"}]
+        best, _ = lookup.pick_result(resultats, "Blade")
+        self.assertEqual(best["id"], 1)
+
+    def test_le_jumeau_est_signale_meme_apres_le_choix_exact(self):
+        resultats = [{"id": 414906, "title": "The Batman", "release_date": "2022-03-01",
+                      "vote_count": 10238},
+                     {"id": 268, "title": "Batman", "release_date": "1989-06-23",
+                      "vote_count": 8107},
+                     {"id": 2661, "title": "Batman", "release_date": "1966-07-30",
+                      "vote_count": 512}]
+        best, notes = lookup.pick_result(resultats, "Batman")
+        self.assertEqual(best["id"], 268)
+        self.assertIn("id 2661", notes[0])
     def test_titre_eloigne_signale(self):
         _, notes = lookup.pick_result([{"id": 9, "title": "Autre chose"}], "Inception")
         self.assertTrue(any("eloigne" in n for n in notes))
@@ -61,6 +105,209 @@ class TestChoixDuResultat(unittest.TestCase):
     def test_description_sans_date(self):
         self.assertEqual(lookup.describe({"id": 1, "title": "X"}), "X (?) [id 1]")
 
+
+class FauxFilms:
+    """Client TMDB cote films : rend {requete: resultats}, retient les appels."""
+
+    def __init__(self, reponses):
+        self.reponses = reponses
+        self.appels = []
+
+    def search_movie(self, title, year=None):
+        # Une cle en texte repond a la recherche sans annee ; une recherche avec
+        # annee ne trouve que ce qu'on lui a explicitement prepare.
+        self.appels.append((title, year))
+        if year:
+            return self.reponses.get((title, year), [])
+        return self.reponses.get(title, [])
+
+
+class TestRenfortDuDossier(unittest.TestCase):
+    """Le dossier parent aide la recherche, mais ne passe jamais devant le titre."""
+
+    def test_le_renfort_ne_passe_jamais_devant_le_titre(self):
+        # "DCEU Man of Steel" ne rend rien : le resultat nu reste en place.
+        tmdb = FauxFilms({"Man of Steel": [{"id": 49521, "title": "Man of Steel"}]})
+        resultats, requete = lookup.search_with_context(tmdb, "Man of Steel", None, ["DCEU"])
+        self.assertEqual((resultats[0]["id"], requete), (49521, "Man of Steel"))
+
+    def test_le_dossier_vient_en_renfort(self):
+        # "Folie a deux" ne dit pas de quoi il est la suite ; le dossier, si.
+        tmdb = FauxFilms({"Joker Folie a deux": [{"id": 889737,
+                                                  "title": "Joker : Folie a deux"}]})
+        resultats, requete = lookup.search_with_context(tmdb, "Folie a deux", None, "Joker")
+        self.assertEqual((resultats[0]["id"], requete), (889737, "Joker Folie a deux"))
+
+    def test_titre_deja_ressemblant_garde_la_main(self):
+        tmdb = FauxFilms({"Folie a deux": [{"id": 889737, "title": "Joker : Folie a deux"}]})
+        _, requete = lookup.search_with_context(tmdb, "Folie a deux", None, "Joker")
+        self.assertEqual((requete, len(tmdb.appels)), ("Folie a deux", 1))
+
+    def test_resultat_etranger_cede_au_renfort(self):
+        tmdb = FauxFilms({
+            "Aube de la justice": [{"id": 1, "title": "Autre chose", "vote_count": 60}],
+            "Batman Aube de la justice": [
+                {"id": 209112, "title": "Batman v Superman : L'aube de la justice",
+                 "vote_count": 17000}]})
+        resultats, requete = lookup.search_with_context(
+            tmdb, "Aube de la justice", None, "Batman")
+        self.assertEqual((resultats[0]["id"], requete),
+                         (209112, "Batman Aube de la justice"))
+
+    def test_dossier_qui_repete_le_titre_ne_sert_a_rien(self):
+        # Regression : "X-Men/01 - X-Men.mkv" cherchait "X-Men X-Men".
+        tmdb = FauxFilms({"X-Men": [{"id": 246655, "title": "X-Men : Apocalypse"}]})
+        _, requete = lookup.search_with_context(tmdb, "X-Men", None, "X-Men")
+        self.assertEqual((requete, tmdb.appels), ("X-Men", [("X-Men", None)]))
+
+    def test_dossier_contenu_dans_le_titre_non_plus(self):
+        tmdb = FauxFilms({"X-Men 2": [{"id": 1, "title": "X-Men : Apocalypse"}]})
+        _, requete = lookup.search_with_context(tmdb, "X-Men 2", None, "X-Men")
+        self.assertEqual((requete, len(tmdb.appels)), ("X-Men 2", 1))
+    def test_le_dossier_sauve_un_sous_titre_seul(self):
+        # Regression : "Apocalypse" ramenait "Amour Apocalypse", un autre film,
+        # avec une ressemblance assez bonne pour ne rien declencher.
+        tmdb = FauxFilms({"Apocalypse": [{"id": 1, "title": "Amour Apocalypse",
+                                          "vote_count": 11}],
+                          "Resident Evil Apocalypse": [
+                              {"id": 1576, "title": "Resident Evil : Apocalypse",
+                               "vote_count": 4880}]})
+        resultats, requete = lookup.search_with_context(tmdb, "Apocalypse", None,
+                                                        ["Resident Evil"])
+        self.assertEqual((resultats[0]["id"], requete),
+                         (1576, "Resident Evil Apocalypse"))
+
+    def test_le_renfort_doit_contenir_le_dossier_ET_le_titre(self):
+        # Sinon c est un autre film de la meme saga : on ne bouge pas.
+        tmdb = FauxFilms({"Apocalypse": [{"id": 1, "title": "Amour Apocalypse"}],
+                          "Resident Evil Apocalypse": [
+                              {"id": 2, "title": "Resident Evil : Retribution"}]})
+        resultats, requete = lookup.search_with_context(tmdb, "Apocalypse", None,
+                                                        ["Resident Evil"])
+        self.assertEqual((resultats[0]["id"], requete), (1, "Apocalypse"))
+
+    def test_le_grand_parent_prend_le_relais(self):
+        # "Resident Evil/Animation/3 - Vendetta" : le dossier immediat ne dit rien.
+        tmdb = FauxFilms({"Vendetta": [{"id": 752, "title": "V pour Vendetta",
+                                        "vote_count": 12000}],
+                          "Resident Evil Vendetta": [
+                              {"id": 424781, "title": "Resident Evil : Vendetta",
+                               "vote_count": 3200}]})
+        resultats, requete = lookup.search_with_context(
+            tmdb, "Vendetta", None, ["Animation", "Resident Evil"])
+        self.assertEqual((resultats[0]["id"], requete),
+                         (424781, "Resident Evil Vendetta"))
+
+    def test_pas_de_renfort_si_le_film_trouve_porte_deja_la_saga(self):
+        # "Folie a deux" ramene deja "Joker : Folie a deux" : rien a ajouter.
+        tmdb = FauxFilms({"Folie a deux": [{"id": 889737,
+                                            "title": "Joker : Folie a deux"}]})
+        _, requete = lookup.search_with_context(tmdb, "Folie a deux", None, ["Joker"])
+        self.assertEqual((requete, len(tmdb.appels)), ("Folie a deux", 1))
+
+    def test_au_plus_deux_dossiers_essayes(self):
+        # Remonter toute l arborescence couterait une requete par etage.
+        tmdb = FauxFilms({"Film": [{"id": 1, "title": "Autre"}]})
+        lookup.search_with_context(tmdb, "Film", None, ["A", "B", "C"])
+        self.assertEqual(tmdb.appels,
+                         [("Film", None), ("A Film", None), ("B Film", None)])
+    def test_un_petit_film_de_saga_passe_quand_meme(self):
+        # "Death Race : Anarchy" (399 votes) face a "American Nightmare 2" (6 787) :
+        # peu vote, mais c est bien le film du dossier.
+        tmdb = FauxFilms({"Anarchy": [{"id": 238636,
+                                       "title": "American Nightmare 2 : Anarchy",
+                                       "vote_count": 6787}],
+                          "Death Race Anarchy": [{"id": 401478,
+                                                  "title": "Death Race : Anarchy",
+                                                  "vote_count": 399}]})
+        resultats, _ = lookup.search_with_context(tmdb, "Anarchy", None, ["Death Race"])
+        self.assertEqual(resultats[0]["id"], 401478)
+    def test_un_renfort_confidentiel_est_refuse(self):
+        # Regression : "Les chroniques de Riddick/1 - Pitch Black" troquait Pitch
+        # Black (4 914 votes) contre un court metrage de la saga (99 votes).
+        tmdb = FauxFilms({"Pitch Black": [{"id": 2787, "title": "Pitch Black",
+                                           "vote_count": 4914}],
+                          "Les chroniques de Riddick Pitch Black": [
+                              {"id": 244839,
+                               "title": "Les Chroniques de Riddick : Into Pitch Black",
+                               "vote_count": 99}]})
+        resultats, requete = lookup.search_with_context(
+            tmdb, "Pitch Black", None, ["Les chroniques de Riddick"])
+        self.assertEqual((resultats[0]["id"], requete), (2787, "Pitch Black"))
+
+    def test_un_dossier_qui_englobe_le_titre_ne_sert_a_rien(self):
+        # "Les chroniques de Riddick/3 - Riddick" : le dossier redit le titre.
+        tmdb = FauxFilms({"Riddick": [{"id": 87421, "title": "Riddick",
+                                       "vote_count": 4492}]})
+        _, requete = lookup.search_with_context(
+            tmdb, "Riddick", None, ["Les chroniques de Riddick"])
+        self.assertEqual((requete, len(tmdb.appels)), ("Riddick", 1))
+
+    def test_sans_resultat_nu_le_renfort_est_pris_tel_quel(self):
+        # "1.5 - Dark Fury" ne rend rien seul : le renfort ne peut pas faire pire.
+        tmdb = FauxFilms({"Les chroniques de Riddick Dark Fury": [
+            {"id": 14663, "title": "Les Chroniques de Riddick : Dark Fury",
+             "vote_count": 300}]})
+        resultats, requete = lookup.search_with_context(
+            tmdb, "Dark Fury", None, ["Les chroniques de Riddick"])
+        self.assertEqual(requete, "Les chroniques de Riddick Dark Fury")
+        self.assertEqual(resultats[0]["vote_count"], 300)
+    def test_renfort_infructueux_ne_change_rien(self):
+        # Un nom de saga que TMDB ignore ("DCEU Man of Steel") ne doit rien casser.
+        tmdb = FauxFilms({})
+        resultats, requete = lookup.search_with_context(tmdb, "Man of Steel", None, "DCEU")
+        self.assertEqual((resultats, requete), ([], "Man of Steel"))
+        self.assertEqual(tmdb.appels, [("Man of Steel", None), ("DCEU Man of Steel", None)])
+
+    def test_sans_dossier_pas_de_renfort(self):
+        tmdb = FauxFilms({})
+        resultats, requete = lookup.search_with_context(tmdb, "Inconnu", None)
+        self.assertEqual((resultats, requete, tmdb.appels),
+                         ([], "Inconnu", [("Inconnu", None)]))
+
+    def test_seconde_tentative_sans_l_annee(self):
+        tmdb = FauxFilms({"Dune": [{"id": 438631, "title": "Dune"}]})
+        resultats, _ = lookup.search_with_context(tmdb, "Dune", "2021")
+        self.assertEqual(resultats[0]["id"], 438631)
+        self.assertEqual(tmdb.appels, [("Dune", "2021"), ("Dune", None)])
+
+class TestVariantesDeTitre(unittest.TestCase):
+    """Ce qui merite une question : le meme titre ecrit autrement."""
+
+    def rivaux(self, requete, *titres):
+        res = [{"id": i, "title": t} for i, t in enumerate(titres)]
+        return [m["title"] for m in lookup.rival_versions(requete, res)]
+
+    def test_variante_d_ecriture(self):
+        # Le cas qui a motive la question : trois fiches pour un meme titre.
+        self.assertEqual(
+            self.rivaux("Les Quatre Fantastiques", "Les Quatre Fantastiques",
+                        "Les 4 Fantastiques", "Les 4 Fantastiques"),
+            ["Les 4 Fantastiques", "Les 4 Fantastiques"])
+
+    def test_une_suite_n_est_pas_une_variante(self):
+        # "Iron Man 2" rallonge le titre : c est une suite, pas une hesitation.
+        self.assertEqual(self.rivaux("Iron Man", "Iron Man", "Iron Man 2", "Iron Man 3"), [])
+
+    def test_un_titre_plus_long_n_est_pas_une_variante(self):
+        # "Learie Constantine" contient la recherche, mais compte un mot de plus.
+        self.assertEqual(self.rivaux("Constantine", "Constantine", "Learie Constantine"), [])
+        self.assertEqual(self.rivaux("The Flash", "The Flash", "The Big Flash"), [])
+
+    def test_titre_sans_rapport(self):
+        self.assertEqual(self.rivaux("Logan", "Logan", "Casino"), [])
+
+    def test_making_of_pris_pour_son_film(self):
+        # Cas reel : TMDB classait le making-of avant le film.
+        rivaux = self.rivaux("Les gardiens de la galaxie Vol 3",
+                             "Rassemblement : Le making-of de Les Gardiens de la Galaxie Vol. 3",
+                             "Les Gardiens de la Galaxie : Volume 3")
+        self.assertEqual(rivaux, ["Les Gardiens de la Galaxie : Volume 3"])
+
+    def test_liste_de_choix_montre_les_concurrents_en_premier(self):
+        res = [{"id": 1, "title": "A"}, {"id": 2, "title": "B"}, {"id": 3, "title": "C"}]
+        choix = lookup.choice_list(res, [res[2]])
+        self.assertEqual([m["id"] for m in choix], [1, 3, 2])
 
 class TestNomDeSerie(unittest.TestCase):
     def query(self, *segments):
