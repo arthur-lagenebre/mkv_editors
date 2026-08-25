@@ -121,6 +121,12 @@ def search_with_context(tmdb, title, year, contexts=(), key="title"):
     donc le resultat nu en place.
     """
     results = _search(tmdb, title, year)
+    # Une annee ecrite dans le nom et confirmee par la fiche trouvee : la
+    # question est deja tranchee, et le dossier n'a rien a y ajouter. Sans ca,
+    # "_DC/Catwoman (2004)" cherchait "_DC Catwoman" et rapportait un court
+    # metrage "DC Showcase: Catwoman".
+    if year and results and (results[0].get("release_date") or "")[:4] == str(year):
+        return results, title
     score = _ratio(title, results[0].get(key)) if results else 0.0
     for context in usable_contexts(contexts, title, results, key):
         renfort_q = f"{context} {title}"

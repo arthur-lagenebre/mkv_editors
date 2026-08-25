@@ -164,6 +164,27 @@ class TestRenfortDuDossier(unittest.TestCase):
         tmdb = FauxFilms({"X-Men 2": [{"id": 1, "title": "X-Men : Apocalypse"}]})
         _, requete = lookup.search_with_context(tmdb, "X-Men 2", None, "X-Men")
         self.assertEqual((requete, len(tmdb.appels)), ("X-Men 2", 1))
+    def test_une_annee_confirmee_clot_la_question(self):
+        # Regression : "_DC/Catwoman (2004)" cherchait "_DC Catwoman" et
+        # rapportait le court metrage "DC Showcase: Catwoman". L annee ecrite
+        # dans le nom, et confirmee par la fiche, tranche deja.
+        tmdb = FauxFilms({("Catwoman", "2004"): [{"id": 314, "title": "Catwoman",
+                                                  "release_date": "2004-07-22",
+                                                  "vote_count": 3672}]})
+        resultats, requete = lookup.search_with_context(tmdb, "Catwoman", "2004", ["_DC"])
+        self.assertEqual((resultats[0]["id"], requete), (314, "Catwoman"))
+        self.assertEqual(len(tmdb.appels), 1)          # le dossier n a pas servi
+
+    def test_une_annee_non_confirmee_laisse_le_renfort_jouer(self):
+        tmdb = FauxFilms({("Apocalypse", "2004"): [{"id": 1, "title": "Amour Apocalypse",
+                                                    "release_date": "2025-01-01",
+                                                    "vote_count": 11}],
+                          "Resident Evil Apocalypse": [
+                              {"id": 1577, "title": "Resident Evil : Apocalypse",
+                               "release_date": "2004-09-10", "vote_count": 4880}]})
+        resultats, _ = lookup.search_with_context(tmdb, "Apocalypse", "2004",
+                                                  ["Resident Evil"])
+        self.assertEqual(resultats[0]["id"], 1577)
     def test_le_dossier_sauve_un_sous_titre_seul(self):
         # Regression : "Apocalypse" ramenait "Amour Apocalypse", un autre film,
         # avec une ressemblance assez bonne pour ne rien declencher.
