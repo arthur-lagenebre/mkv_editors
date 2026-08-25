@@ -15,9 +15,10 @@ Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux) :
   - le nom des pistes AUDIO       -> codec + canaux + debit (ex. "E-AC-3 5.1 640 kb/s")
   - le nom des pistes SOUS-TITRES -> uniquement les drapeaux actifs (Forced, SDH...), ou "Full"
   - les DRAPEAUX 'par defaut'     -> une seule piste audio par defaut (la FR), aucun sous-titre
-  - le drapeau FORCED             -> pose sur un sous-titre dont le NOM dit "force" alors que le
-    drapeau manque (sinon, le renommer d'apres ses drapeaux effacerait l'information). Une seule
-    piste par langue, et rien si le fichier declare deja un sous-titre force.  [--no-flags]
+  - les drapeaux FORCED et SDH    -> poses sur un sous-titre dont le NOM les annonce ("Francais
+    force", "English SDH") alors que le drapeau manque - sinon, le renommer d'apres ses seuls
+    drapeaux effacerait l'information. Une seule piste par langue, et rien dans une langue qui
+    declare deja le drapeau.  [--no-flags]
 
 Un film dont une piste est AMBIGUE n'est pas traite du tout - pas meme ses autres fichiers :
 un nom qui dit "force" sans drapeau transposable, ou deux pistes de meme langue qui

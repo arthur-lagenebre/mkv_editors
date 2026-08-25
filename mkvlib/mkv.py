@@ -294,51 +294,58 @@ def audio_track_name(track):
 
 
 # Le nom d'une piste dit parfois ce que ses drapeaux taisent : "Francais force"
-# sur une piste dont flag-forced est absent. La renommer d'apres ses seuls
-# drapeaux effacerait la derniere trace de l'information - on la remet donc la ou
-# elle appartient, dans le drapeau.
-FORCED_NAME_RE = re.compile(r"\bforc[eé]", re.IGNORECASE)
+# sur une piste dont flag-forced est absent, "English SDH" sur une piste qui ne
+# se declare pas malentendante. La renommer d'apres ses seuls drapeaux effacerait
+# la derniere trace de l'information - on la remet donc la ou elle appartient.
+# {motif dans le nom: (drapeau lu par mkvmerge, propriete ecrite par mkvpropedit)}
+NAME_FLAGS = {
+    re.compile(r"\bforc[eé]", re.IGNORECASE): ("forced_track", "flag-forced"),
+    re.compile(r"\b(?:sdh|malentendants?)\b", re.IGNORECASE):
+        ("flag_hearing_impaired", "flag-hearing-impaired"),
+}
 
 
-def forced_from_name(subs):
-    """Selecteurs des sous-titres a marquer 'forced' d'apres leur nom.
+def flagged_from_name(subs, motif, cle):
+    """Selecteurs des sous-titres a marquer d'apres leur NOM, langue par langue.
 
     Deux gardes, parce qu'un fichier ne doit jamais se retrouver avec deux pistes
     forcees dans la meme langue - le lecteur en choisirait une au hasard :
-      - aucune piste du fichier ne porte deja le drapeau. La ou il existe, la
+      - rien dans une langue ou le drapeau est deja pose. La ou il existe, la
         situation est declaree, et ce n'est pas a un nom de la contredire ;
       - une seule piste par langue, la premiere rencontree.
     """
-    if any(tr.get("properties", {}).get("forced_track") for _, tr in subs):
-        return set()
-    retenus, langues = set(), set()
+    retenus = set()
+    langues = {lang(tr).lower()[:2] for _, tr in subs if tr.get("properties", {}).get(cle)}
     for sel, tr in subs:
         code = lang(tr).lower()[:2]
-        if code not in langues and FORCED_NAME_RE.search(current_name(tr)):
+        if code not in langues and motif.search(current_name(tr)):
             retenus.add(sel)
             langues.add(code)
     return retenus
 
 
 def subtitle_targets(subs, opts):
-    """[(selecteur, piste, a_forcer), ...] : l'etat vise de chaque sous-titre.
+    """[(selecteur, piste, drapeaux a poser), ...] : l'etat vise de chaque sous-titre.
 
     Poser un drapeau, c'est modifier des drapeaux : --no-flags s'en abstient, et
     le nom decrit alors le fichier tel qu'il est.
     """
-    forces = forced_from_name(subs) if opts.flags else set()
-    return [(sel, tr, sel in forces) for sel, tr in subs]
+    a_poser = {sel: set() for sel, _ in subs}
+    if opts.flags:
+        for motif, (cle, _) in NAME_FLAGS.items():
+            for sel in flagged_from_name(subs, motif, cle):
+                a_poser[sel].add(cle)
+    return [(sel, tr, a_poser[sel]) for sel, tr in subs]
 
 
-def subtitle_track_name(track, forced=False):
+def subtitle_track_name(track, ajouts=()):
     """Drapeaux actifs d'une piste de sous-titres, ou 'Full' si elle n'en a aucun.
 
-    `forced` ajoute le drapeau qu'on s'apprete a poser d'apres le nom : le nom
+    `ajouts` sont les drapeaux qu'on s'apprete a poser d'apres le nom : le nom
     vise decrit le fichier tel qu'il sera, pas tel qu'il est.
     """
     p = track.get("properties", {})
-    labels = " ".join(label for key, label in SUB_FLAGS
-                      if p.get(key) or (forced and key == "forced_track"))
+    labels = " ".join(label for key, label in SUB_FLAGS if p.get(key) or key in ajouts)
     return labels or "Full"
 
 
@@ -512,14 +519,15 @@ def track_preview_lines(info, opts):
             lines.append(f"      audio {sel} [{lang(tr)}]{mark} : "
                          f"{current_name(tr) or '(vide)'!r} -> {audio_track_name(tr) or '(vide)'!r}")
     if opts.sub_names:
-        for sel, tr, forcer in subtitle_targets(subs, opts):
+        for sel, tr, ajouts in subtitle_targets(subs, opts):
             p = tr.get("properties", {})
             flags = [label for key, label in SUB_FLAGS if p.get(key)]
             etat = ",".join(flags) or "aucun"
-            if forcer:
-                etat += " +Forced (d'apres le nom)"
+            if ajouts:
+                venus = [label for key, label in SUB_FLAGS if key in ajouts]
+                etat += " +" + ",".join(venus) + " (d'apres le nom)"
             lines.append(f"      st {sel} [{lang(tr)}] drapeaux={etat} : "
-                         f"{current_name(tr) or '(vide)'!r} -> {subtitle_track_name(tr, forcer)!r}")
+                         f"{current_name(tr) or '(vide)'!r} -> {subtitle_track_name(tr, ajouts)!r}")
     return lines
 
 
@@ -537,14 +545,15 @@ def track_conflicts(info, opts):
     raisons = []
 
     if opts.sub_names:
-        deja = [sel for sel, tr in subs if tr.get("properties", {}).get("forced_track")]
-        for sel, tr, forcer in cibles:
-            if forcer or tr.get("properties", {}).get("forced_track"):
-                continue
-            if FORCED_NAME_RE.search(current_name(tr)):
-                cause = f"st {deja[0]} porte deja le drapeau" if deja else "--no-flags"
-                raisons.append(f"st {sel} : le nom dit 'force' ({current_name(tr)!r}) "
-                               f"mais {cause} -> le nom serait efface")
+        for motif, (cle, _) in NAME_FLAGS.items():
+            deja = [sel for sel, tr in subs if tr.get("properties", {}).get(cle)]
+            for sel, tr, ajouts in cibles:
+                if cle in ajouts or tr.get("properties", {}).get(cle):
+                    continue
+                if motif.search(current_name(tr)):
+                    cause = f"st {deja[0]} porte deja le drapeau" if deja else "--no-flags"
+                    raisons.append(f"st {sel} : le nom l'annonce ({current_name(tr)!r}) "
+                                   f"mais {cause} -> le nom serait efface")
 
     # Deux pistes de meme langue et de meme nom vise : apres coup, plus rien ne
     # les distingue - ni pour un lecteur, ni pour celui qui rouvrira le fichier.
@@ -553,9 +562,9 @@ def track_conflicts(info, opts):
         for sel, tr in audios:
             vises.setdefault(("audio", lang(tr).lower()[:2], audio_track_name(tr)), []).append(sel)
     if opts.sub_names:
-        for sel, tr, forcer in cibles:
+        for sel, tr, ajouts in cibles:
             vises.setdefault(("st", lang(tr).lower()[:2],
-                              subtitle_track_name(tr, forcer)), []).append(sel)
+                              subtitle_track_name(tr, ajouts)), []).append(sel)
     for (genre, code, nom), sels in vises.items():
         if len(sels) > 1:
             pistes = " et ".join(f"{genre} {s}" for s in sels)
@@ -587,14 +596,16 @@ def verify(info, target, opts, tags=None):
                            current_name(tr) or "(vide)"))
     cibles = subtitle_targets(subs, opts)
     if opts.sub_names:
-        for sel, tr, forcer in cibles:
-            checks.append((f"st {sel}", current_name(tr) == subtitle_track_name(tr, forcer),
+        for sel, tr, ajouts in cibles:
+            checks.append((f"st {sel}", current_name(tr) == subtitle_track_name(tr, ajouts),
                            current_name(tr) or "(vide)"))
-    for sel, tr, forcer in cibles:
+    for sel, tr, ajouts in cibles:
         # Un drapeau a poser est un ecart : sans ca, --skip-done sauterait le
         # fichier et le nom serait le seul a porter l'information, encore.
-        if forcer:
-            checks.append((f"st {sel} forced", False, "absent (le nom dit 'force')"))
+        for key, label in SUB_FLAGS:
+            if key in ajouts:
+                checks.append((f"st {sel} {label.lower()}", False,
+                               "absent (le nom l'annonce)"))
     if tags is not None and target.tags_xml:
         attendus = parse_tags(target.tags_xml)
         manquants, en_trop = attendus - tags, tags - attendus
@@ -642,15 +653,16 @@ def write(path, info, target, opts, tmdb):
                 sets += ["--set", f"flag-default={1 if sel == primary else 0}"]
             if sets:
                 cmd += ["--edit", f"track:{sel}"] + sets
-        for sel, tr, forcer in subtitle_targets(subs, opts):
+        for sel, tr, ajouts in subtitle_targets(subs, opts):
             sets = []
             if opts.sub_names:
-                nm = subtitle_track_name(tr, forcer)
+                nm = subtitle_track_name(tr, ajouts)
                 sets += ["--set", f"name={nm}"] if nm else (["--delete", "name"] if current_name(tr) else [])
             if opts.flags:
                 sets += ["--set", "flag-default=0"]   # aucun sous-titre par defaut
-                if forcer:                            # sinon 'forced' reste inchange
-                    sets += ["--set", "flag-forced=1"]
+                for motif, (cle, propriete) in NAME_FLAGS.items():
+                    if cle in ajouts:   # sinon les drapeaux restent inchanges
+                        sets += ["--set", f"{propriete}=1"]
             if sets:
                 cmd += ["--edit", f"track:{sel}"] + sets
 
