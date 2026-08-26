@@ -1,71 +1,71 @@
 #!/usr/bin/env python3
 r"""
-Metadata.py — Etiquette les .mkv d'une serie a partir de TMDB (donnees en francais).
+Metadata.py — Étiquette les .mkv d'une série à partir de TMDB (données en français).
 
-Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux, c'est quasi instantane) :
+Écrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux, c'est quasi instantané) :
   - le titre et la DATE de sortie dans les informations de segment
-  - le synopsis, les numeros saison/episode, realisateur(s), scenariste(s), casting (tags)
-  - les tags de STATISTIQUES de piste (debit, duree, nb d'images)  [--no-stats pour desactiver]
-  - la vignette de l'episode comme jaquette (attachment "cover.jpg")
-  - le nom des pistes AUDIO       -> codec + canaux + debit (ex. "E-AC-3 5.1 640 kb/s")
+  - le synopsis, les numéros saison/épisode, réalisateur(s), scénariste(s), casting (tags)
+  - les tags de STATISTIQUES de piste (débit, durée, nb d'images)  [--no-stats pour désactiver]
+  - la vignette de l'épisode comme jaquette (attachment "cover.jpg")
+  - le nom des pistes AUDIO       -> codec + canaux + débit (ex. "E-AC-3 5.1 640 kb/s")
   - le nom des pistes SOUS-TITRES -> uniquement les drapeaux actifs (Forced, SDH...), ou "Full"
-  - les DRAPEAUX 'par defaut'     -> une seule piste audio par defaut (la FR), aucun sous-titre
-  - les drapeaux FORCED et SDH    -> poses sur un sous-titre dont le NOM les annonce ("Francais
-    force", "English SDH") alors que le drapeau manque - sinon, le renommer d'apres ses seuls
+  - les DRAPEAUX 'par défaut'     -> une seule piste audio par défaut (la FR), aucun sous-titre
+  - les drapeaux FORCED et SDH    -> posés sur un sous-titre dont le NOM les annonce ("Français
+    force", "English SDH") alors que le drapeau manque - sinon, le renommer d'après ses seuls
     drapeaux effacerait l'information. Une seule piste par langue, et rien dans une langue qui
-    declare deja le drapeau.  [--no-flags]
+    declare déjà le drapeau.  [--no-flags]
 
-=> Fichier 100% autonome : toutes les metadonnees voyagent avec le .mkv.
+=> Fichier 100% autonome : toutes les métadonnées voyagent avec le .mkv.
 
-Dependances EXTERNES (a avoir dans le PATH) :
+Dépendances EXTERNES (à avoir dans le PATH) :
   - mkvpropedit, mkvmerge et mkvextract   -> paquet MKVToolNix
-  - ffprobe                   -> paquet FFmpeg  (pour le debit audio + la verif. des durees)
+  - ffprobe                   -> paquet FFmpeg  (pour le débit audio + la vérif. des durées)
 
-Aucune dependance pip. Necessite un acces Internet (API TMDB + jaquettes).
-Le code partage avec les autres scripts du depot vit dans mkvlib/ (a la racine).
+Aucune dépendance pip. Necessite un accès Internet (API TMDB + jaquettes).
+Le code partage avec les autres scripts du dépôt vit dans mkvlib/ (à la racine).
 
 Installation des outils (Windows) :
   winget install MoritzBunkus.MKVToolNix
   winget install Gyan.FFmpeg
 
-Cle TMDB gratuite : themoviedb.org -> Parametres -> API. A mettre dans le fichier .env
-a la racine du depot, sur une ligne TMDB_KEY=... : c'est la seule source.
+Clé TMDB gratuite : themoviedb.org -> Paramètres -> API. À mettre dans le fichier .env
+à la racine du dépôt, sur une ligne TMDB_KEY=... : c'est la seule source.
 
-Usage — pointe --dir sur la RACINE de la serie (dossiers "Saison N") :
+Usage — pointe --dir sur la RACINE de la série (dossiers "Saison N") :
 
-  # Simulation (n'ecrit rien) puis application :
+  # Simulation (n'écrit rien) puis application :
   python Metadata.py --dir "...\Secret Level"
   python Metadata.py --dir "...\Secret Level" --apply
 
-  # Verification (lecture seule) : rapporte ce qui n'est pas encore conforme.
+  # Vérification (lecture seule) : rapporte ce qui n'est pas encore conforme.
   python Metadata.py --dir "...\Secret Level" --verify
 
-  # La serie est identifiee par recherche sur le nom du dossier ; --tmdb-id ne
+  # La série est identifiée par recherche sur le nom du dossier ; --tmdb-id ne
   # sert qu'a corriger une recherche qui se trompe ou ne trouve rien :
   python Metadata.py --dir "...\Secret Level" --tmdb-id 261579 --apply
 
 Structure attendue : un sous-dossier "Saison N" par saison (les .mkv dedans), chaque .mkv
-prefixe par son numero d'episode ("01 - ...", "05 - ..."). Si --dir pointe directement sur
-un dossier de saison, seule celle-ci est traitee. Un dossier "Specials" vaut la saison 0.
-L'identifiant TMDB peut etre epingle dans le nom du dossier de la serie, sous la forme
-"Ma Serie [tmdbid-1396]" : plus besoin de --tmdb-id aux passages suivants.
+préfixe par son numéro d'épisode ("01 - ...", "05 - ..."). Si --dir pointe directement sur
+un dossier de saison, seule celle-ci est traitée. Un dossier "Specials" vaut la saison 0.
+L'identifiant TMDB peut être épinglé dans le nom du dossier de la série, sous la forme
+"Ma Série [tmdbid-1396]" : plus besoin de --tmdb-id aux passages suivants.
 
 Options principales :
-  --tmdb-id STR    identifiant TMDB (defaut : recherche sur le nom du dossier)
-  --language STR   langue TMDB (defaut : fr-FR)
-  --no-cache       ignore le cache des reponses TMDB (garde 7 jours) et le rafraichit
-  --series-name STR  force le nom de serie (sinon auto depuis TMDB)
-  --apply          applique reellement (defaut : simulation)
-  --verify         verifie seulement (aucune ecriture)
-  --skip-done      saute les fichiers deja conformes
-  --no-tag         ne modifie aucun episode ; genere seulement folder.jpg / recap (series non-MKV)
+  --tmdb-id STR    identifiant TMDB (défaut : recherche sur le nom du dossier)
+  --language STR   langue TMDB (défaut : fr-FR)
+  --no-cache       ignore le cache des réponses TMDB (garde 7 jours) et le rafraîchit
+  --séries-name STR  force le nom de série (sinon auto depuis TMDB)
+  --apply          applique réellement (défaut : simulation)
+  --verify         vérifie seulement (aucune écriture)
+  --skip-done      saute les fichiers déjà conformes
+  --no-tag         ne modifie aucun épisode ; genere seulement folder.jpg / récap (séries non-MKV)
   --no-cover / --no-date / --no-audio-names / --no-sub-names / --no-flags / --no-stats
-  --artwork        ecrit folder.jpg (vignette de dossier) en anglais (serie et chaque saison)
-  --recap          genere une fiche recap HTML de la serie (onglets par saison)
-                   -> fichier UNIQUE : les vignettes sont encodees dedans, rien a cote
-                   -> les episodes absents du disque sont grises et comptes par saison
-  --image-size STR taille TMDB jaquette / folder.jpg : w300 / w780 / original (defaut : w780)
-  --still-size STR taille TMDB des vignettes du recap (defaut : w300)
+  --artwork        écrit folder.jpg (vignette de dossier) en anglais (série et chaque saison)
+  --récap          genere une fiche récap HTML de la série (onglets par saison)
+                   -> fichier UNIQUE : les vignettes sont encodées dedans, rien à côté
+                   -> les épisodes absents du disque sont grises et comptes par saison
+  --image-size STR taille TMDB jaquette / folder.jpg : w300 / w780 / original (défaut : w780)
+  --still-size STR taille TMDB des vignettes du récap (défaut : w300)
 """
 
 import argparse
@@ -74,14 +74,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # pour importer mkvlib
 from mkvlib import artwork, cache, cli, embed, lookup, mkv, naming  # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 
 
 # ----------------------------------------------------------------------------
-# 1. Etat vise pour un episode : tags Matroska + titre + date + jaquette
-#    TargetTypeValue : 70 = COLLECTION (serie), 60 = SEASON, 50 = EPISODE
+# 1. État vise pour un épisode : tags Matroska + titre + date + jaquette
+#    TargetTypeValue : 70 = COLLECTION (série), 60 = SEASON, 50 = ÉPISODE
 # ----------------------------------------------------------------------------
 def build_tags_xml(season, ep, series_name, max_actors=20):
     blocks = []
@@ -94,8 +94,7 @@ def build_tags_xml(season, ep, series_name, max_actors=20):
         mkv.simple("TOTAL_PARTS", len(season.get("episodes", []))),
     ]))
 
-    lines = [mkv.simple("TITLE", ep.get("name", "")),
-             mkv.simple("PART_NUMBER", ep.get("episode_number", ""))]
+    lines = [mkv.simple("TITLE", ep.get("name", "")), mkv.simple("PART_NUMBER", ep.get("episode_number", ""))]
     if ep.get("overview"):
         lines.append(mkv.simple("SYNOPSIS", ep["overview"]))
         lines.append(mkv.simple("SUMMARY", ep["overview"]))
@@ -103,15 +102,13 @@ def build_tags_xml(season, ep, series_name, max_actors=20):
         lines.append(mkv.simple("DATE_RELEASED", ep["air_date"]))
     lines += mkv.credits_lines(ep.get("crew", []), ep.get("guest_stars", []), max_actors)
     if ep.get("vote_average"):
-        lines.append(mkv.simple(
-            "COMMENT",
-            f"TMDB {round(ep['vote_average'], 1)}/10 ({ep.get('vote_count', 0)} votes)"))
+        lines.append(mkv.simple("COMMENT", f"TMDB {round(ep['vote_average'], 1)}/10 ({ep.get('vote_count', 0)} votes)"))
     blocks.append(mkv.tag_block(50, lines))
     return mkv.tags_document(blocks)
 
 
 def episode_target(season, ep, series_name, opts):
-    """Ce que le .mkv de cet episode devrait contenir."""
+    """Ce que le .mkv de cet épisode devrait contenir."""
     return mkv.Target(
         title=ep.get("name", ""),
         date=ep.get("air_date"),
@@ -125,8 +122,7 @@ def episode_target(season, ep, series_name, opts):
 # ----------------------------------------------------------------------------
 @dataclass
 class SeasonRun:
-    """Une saison traitee : son dossier, ses donnees TMDB, et les numeros
-    d'episode effectivement presents sur le disque (pour la fiche recap)."""
+    """Une saison traitée : son dossier, ses données TMDB, et les numéros d'épisode effectivement présents sur le disque (pour la fiche récap)."""
     folder: Path
     number: int
     data: dict
@@ -138,10 +134,9 @@ class SeasonRun:
 
 
 def season_run(folder, number, data, args):
-    """Assemble une saison traitee, avec l'inventaire de ce qui est sur le disque.
+    """Assemble une saison traitée, avec l'inventaire de ce qui est sur le disque.
 
-    L'inventaire se lit dans les noms de fichiers, tous formats video confondus :
-    il reste donc juste meme avec --no-tag, pour une serie qui n'est pas en .mkv.
+    L'inventaire se lit dans les noms de fichiers, tous formats vidéo confondus : il reste donc juste même avec --no-tag, pour une série qui n'est pas en .mkv.
     """
     owned = naming.owned_numbers(folder, data.get("episodes", []), args.match_threshold)
     return SeasonRun(Path(folder), number, data, owned)
@@ -149,20 +144,19 @@ def season_run(folder, number, data, args):
 
 @dataclass
 class Candidate:
-    """Un .mkv du dossier, confronte aux donnees TMDB."""
+    """Un .mkv du dossier, confronte aux données TMDB."""
     path: Path
     episode: dict | None = None
     method: str = ""
-    notes: list = field(default_factory=list)   # remarques a afficher sous le fichier
+    notes: list = field(default_factory=list)   # remarques à afficher sous le fichier
     info: dict | None = None
-    tags: set | None = None                     # tags deja ecrits, si on les a relus
+    tags: set | None = None                     # tags déjà écrits, si on les à relus
 
 
 def build_plan(mkv_dir, season, args, opts):
     """[Candidate, ...] pour les .mkv du dossier, dans l'ordre des noms.
 
-    Les fichiers associes sont lus en parallele : chacun coute deux
-    sous-processus qu'on ne fait qu'attendre.
+    Les fichiers associes sont lus en parallèle : chacun coûte deux sous-processus qu'on ne fait qu'attendre.
     """
     episodes = season.get("episodes", [])
     by_num = {e.get("episode_number"): e for e in episodes}
@@ -184,14 +178,12 @@ def build_plan(mkv_dir, season, args, opts):
             candidate.notes.append(lecture.note)
         dmin, runtime = lecture.probe.duration_min, candidate.episode.get("runtime")
         if dmin and runtime and abs(dmin - runtime) > 3:
-            candidate.notes.append(
-                f"duree {dmin:.0f}min vs {runtime}min attendues -> a verifier")
+            candidate.notes.append(f"duree {dmin:.0f}min vs {runtime}min attendues -> a verifier")
     return plan
 
 
 def process_season(mkv_dir, season, args, opts, tmdb):
-    """Construit le plan d'une saison, l'affiche, et applique si --apply.
-    Retourne le Report de la saison."""
+    """Construit le plan d'une saison, l'affiche, et applique si --apply. Retourne le Report de la saison."""
     plan = build_plan(mkv_dir, season, args, opts)
     if not plan:
         print(f"  Aucun .mkv dans {mkv_dir}")
@@ -209,9 +201,8 @@ def process_season(mkv_dir, season, args, opts, tmdb):
         for note in c.notes:
             print(f"            /!\\ {note}")
         target = episode_target(season, c.episode, args.series_name, opts)
-        if args.verify:                     # mode verification : etat actuel vs vise
-            diffs = [(lbl, det) for lbl, ok, det
-                     in mkv.verify(c.info, target, opts, c.tags) if not ok]
+        if args.verify:                     # mode vérification : état actuel vs vise
+            diffs = [(lbl, det) for lbl, ok, det in mkv.verify(c.info, target, opts, c.tags) if not ok]
             for lbl, det in diffs:
                 print(f"      [DIFF] {lbl} : actuel = {det!r}")
             if diffs:
@@ -236,18 +227,17 @@ def process_season(mkv_dir, season, args, opts, tmdb):
             code, msg = mkv.write(c.path, c.info, target, opts, tmdb)
             if code:
                 report.failures += 1
-            print(f"  [{'OK' if code == 0 else 'ECHEC'}] {c.path.name}"
-                  + (f"  -> {msg}" if code else ""))
+            print(f"  [{'OK' if code == 0 else 'ECHEC'}] {c.path.name}" + (f"  -> {msg}" if code else ""))
 
     print(f"  => {report.matched}/{report.total} associe(s).")
     return report
 
 
 # ----------------------------------------------------------------------------
-# 3. Fiche recap HTML : vignettes encodees dans la page
+# 3. Fiche récap HTML : vignettes encodées dans la page
 # ----------------------------------------------------------------------------
 def collect_stills(runs, size):
-    """Retourne {cle: chemin TMDB} pour toutes les vignettes d'episode disponibles."""
+    """Retourne {clé: chemin TMDB} pour toutes les vignettes d'épisode disponibles."""
     needed = {}
     for run in runs:
         for ep in run.episodes:
@@ -258,14 +248,11 @@ def collect_stills(runs, size):
 
 
 def build_recap_html(series_name, show, runs, tmdb_id, stills, size):
-    """Rend la page HTML (pur rendu : ni reseau ni disque).
+    """Rend la page HTML (pur rendu : ni réseau ni disque).
 
-    'stills' = {cle: data-URI} ; un episode sans vignette disponible recoit un
-    emplacement vide plutot qu'une balise <img> sans source.
+    'stills' = {clé: data-URI} ; un épisode sans vignette disponible reçoit un emplacement vide plutôt qu'une balise <img> sans source.
 
-    Les episodes absents du disque sont grises et etiquetes, avec un compteur par
-    saison. Une saison dont on ne connait aucun fichier n'est pas marquee du tout :
-    mieux vaut ne rien dire que tout declarer manquant."""
+    Les épisodes absents du disque sont grises et étiquetés, avec un compteur par saison. Une saison dont on ne connaît aucun fichier n'est pas marquée du tout : mieux vaut ne rien dire que tout déclarer manquant."""
     def esc(s):
         return escape(str(s or ""))
 
@@ -274,8 +261,7 @@ def build_recap_html(series_name, show, runs, tmdb_id, stills, size):
         label = run.data.get("name") or f"Saison {run.number}"
         episodes = run.episodes
         marque = bool(run.owned)          # sans inventaire, on ne juge pas
-        compteur = (f"<span class='cnt'>{len(run.owned)}/{len(episodes)}</span>"
-                    if marque and episodes else "")
+        compteur = (f"<span class='cnt'>{len(run.owned)}/{len(episodes)}</span>" if marque and episodes else "")
         tabs.append(f"<button class='tab{' active' if i == 0 else ''}' "
                     f"data-s='{run.number}'>{esc(label)}{compteur}</button>")
         cards = []
@@ -348,8 +334,7 @@ def _write_text(path, text, apply):
 
 
 def generate_sidecars(root_dir, series_name, show, processed, args, tmdb):
-    """Ecrit posters de dossier (affiche EN) / fiche recap selon les options.
-    processed = [SeasonRun, ...]."""
+    """Écrit posters de dossier (affiche EN) / fiche récap selon les options. processed = [SeasonRun, ...]."""
     if not (args.artwork or args.recap):
         return
     apply = args.apply and not args.verify
@@ -357,26 +342,19 @@ def generate_sidecars(root_dir, series_name, show, processed, args, tmdb):
 
     if args.artwork:
         for run in processed:
-            poster = artwork.english_poster(
-                lambda: tmdb.season(args.tmdb_id, run.number, artwork.ARTWORK_LANG),
-                run.data.get("poster_path"))
+            poster = artwork.english_poster(lambda: tmdb.season(args.tmdb_id, run.number, artwork.ARTWORK_LANG), run.data.get("poster_path"))
             print(f"  [saison {run.number}] affiche (EN) : "
                   f"{artwork.write_poster(poster, run.folder, apply, tmdb)}")
-        poster = artwork.english_poster(
-            lambda: tmdb.series(args.tmdb_id, artwork.ARTWORK_LANG),
-            show.get("poster_path"))
+        poster = artwork.english_poster(lambda: tmdb.series(args.tmdb_id, artwork.ARTWORK_LANG), show.get("poster_path"))
         print(f"  [serie] affiche (EN) : {artwork.write_poster(poster, root_dir, apply, tmdb)}")
 
     if args.recap:
         out = Path(root_dir) / "recap.html"
         needed = collect_stills(processed, args.still_size)
-        # En simulation on ne telecharge rien : la page est rendue sans vignette.
-        stills = (embed.fetch(needed, embed.read_embedded(out), args.still_size,
-                              tmdb, label="vignette") if apply else {})
+        # En simulation on ne télécharge rien : la page est rendue sans vignette.
+        stills = (embed.fetch(needed, embed.read_embedded(out), args.still_size, tmdb, label="vignette") if apply else {})
         html = build_recap_html(series_name, show, processed, args.tmdb_id, stills, args.still_size)
-        print(f"  [serie] {_write_text(out, html, apply)}"
-              + (f"  ({len(html) / 1_048_576:.1f} Mo, {len(stills)} vignette(s) integree(s))"
-                 if stills else ""))
+        print(f"  [serie] {_write_text(out, html, apply)}" + (f"  ({len(html) / 1_048_576:.1f} Mo, {len(stills)} vignette(s) integree(s))" if stills else ""))
         legacy = Path(root_dir) / "assets"
         if legacy.is_dir():
             print(f"  [serie] note : le dossier '{legacy.name}' n'est plus utilise "
@@ -387,39 +365,33 @@ def generate_sidecars(root_dir, series_name, show, processed, args, tmdb):
 # 4. Programme principal
 # ----------------------------------------------------------------------------
 def parse_args():
-    ap = argparse.ArgumentParser(
-        description="Etiquette des .mkv depuis TMDB (donnees en francais via l'API).")
-    ap.add_argument("--dir", required=True,
-                    help="Racine de la serie (dossiers 'Saison N') OU un seul dossier de saison")
+    ap = argparse.ArgumentParser(description="Etiquette des .mkv depuis TMDB (donnees en francais via l'API).")
+    ap.add_argument("--dir", required=True, help="Racine de la serie (dossiers 'Saison N') OU un seul dossier de saison")
     # --- Source TMDB ---
     ap.add_argument("--tmdb-id", help="Identifiant TMDB de la serie "
                     "(par defaut : recherche sur le nom du dossier)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
-    ap.add_argument("--no-cache", action="store_true",
-                    help="Ignore le cache des reponses TMDB et le rafraichit")
+    ap.add_argument("--no-cache", action="store_true", help="Ignore le cache des reponses TMDB et le rafraichit")
     ap.add_argument("--series-name", help="Force le nom de serie (sinon recupere automatiquement de TMDB)")
-    # --- Ce qu'on ecrit ---
+    # --- Ce qu'on écrit ---
     ap.add_argument("--apply", action="store_true", help="Applique reellement (defaut : simulation)")
     ap.add_argument("--verify", action="store_true", help="Verifie seulement l'etat des fichiers (aucune ecriture)")
     ap.add_argument("--skip-done", action="store_true", help="Saute les fichiers deja conformes")
-    ap.add_argument("--no-tag", action="store_true",
-                    help="Ne modifie aucun episode ; genere seulement folder.jpg / recap (series non-MKV)")
+    ap.add_argument("--no-tag", action="store_true", help="Ne modifie aucun episode ; genere seulement folder.jpg / recap (series non-MKV)")
     ap.add_argument("--no-cover", action="store_true", help="N'embarque pas la jaquette")
     ap.add_argument("--no-date", action="store_true", help="Ne modifie pas la date du segment")
     ap.add_argument("--no-audio-names", action="store_true", help="Ne renomme pas les pistes audio")
     ap.add_argument("--no-sub-names", action="store_true", help="Ne renomme pas les pistes de sous-titres")
     ap.add_argument("--no-flags", action="store_true", help="Ne touche pas aux drapeaux 'par defaut'")
     ap.add_argument("--no-stats", action="store_true", help="N'ajoute pas les tags de statistiques de piste")
-    # --- Generateurs annexes (option, ecrivent des fichiers a cote des .mkv) ---
+    # --- Générateurs annexes (option, écrivent des fichiers à côté des .mkv) ---
     ap.add_argument("--artwork", action="store_true", help="Ecrit folder.jpg (vignette de dossier) en anglais")
     ap.add_argument("--recap", action="store_true", help="Genere une fiche recap HTML de la serie")
-    ap.add_argument("--image-size", default="w780",
-                    help="Taille TMDB de la jaquette embarquee / folder.jpg : w300 / w780 / original")
+    ap.add_argument("--image-size", default="w780", help="Taille TMDB de la jaquette embarquee / folder.jpg : w300 / w780 / original")
     ap.add_argument("--still-size", default="w300",
                     help="Taille TMDB des vignettes du recap (defaut : w300 ; w400 = plus net "
                          "sur ecran HiDPI mais fiche plus lourde)")
-    ap.add_argument("--match-threshold", type=float, default=0.55,
-                    help="Score minimal pour une association par titre (0-1)")
+    ap.add_argument("--match-threshold", type=float, default=0.55, help="Score minimal pour une association par titre (0-1)")
     return ap.parse_args()
 
 
@@ -429,16 +401,15 @@ def main():
     cli.check_dir(args.dir)
     args.probe = mkv.check_tools(needs_mkvtoolnix=not args.no_tag)
     opts = mkv.Options.from_args(args)
-    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="tag_mkv/1.0",
-                cache=cache.Cache(read=not args.no_cache))
+    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="tag_mkv/1.0", cache=cache.Cache(read=not args.no_cache))
 
-    # La banniere d'abord : la recherche de serie s'affiche dessous, pas avant.
+    # La bannière d'abord : la recherche de série s'affiche dessous, pas avant.
     print(f"=== {cli.mode_label(args)} ===")
     args.tmdb_id = lookup.resolve_show_id(tmdb, args.dir, args.tmdb_id)
     if args.tmdb_id is None:
         sys.exit("Serie non identifiee : relance avec --tmdb-id.")
 
-    # Details de la serie via TMDB (nom auto, + poster/synopsis pour les annexes)
+    # Détails de la série via TMDB (nom auto, + poster/synopsis pour les annexes)
     try:
         show = tmdb.series(args.tmdb_id)
     except TmdbError as e:
@@ -453,7 +424,7 @@ def main():
 
     seasons = naming.find_seasons(args.dir)
     if seasons:
-        # --- Multi-saisons : --dir est la racine de la serie ---
+        # --- Multi-saisons : --dir est la racine de la série ---
         report = mkv.Report()
         processed = []
         for sub, num in seasons:
@@ -486,8 +457,7 @@ def main():
             print("  episodes non modifies (--no-tag)")
         else:
             report = process_season(args.dir, data, args, opts, tmdb)
-        generate_sidecars(args.dir, args.series_name, show,
-                          [season_run(Path(args.dir), num, data, args)], args, tmdb)
+        generate_sidecars(args.dir, args.series_name, show, [season_run(Path(args.dir), num, data, args)], args, tmdb)
 
     reste = report.epilogue()
     if reste:

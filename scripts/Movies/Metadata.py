@@ -1,106 +1,106 @@
 #!/usr/bin/env python3
 r"""
-Metadata.py — Etiquette des films .mkv a partir de TMDB (donnees en francais via l'API).
+Metadata.py — Étiquette des films .mkv à partir de TMDB (données en français via l'API).
 
-Meme principe que TV_Shows/Metadata.py, mais pour les films : pas de saisons/episodes,
-et l'association se fait par RECHERCHE TMDB sur le titre + l'annee extraits du nom.
+Même principe que TV_Shows/Metadata.py, mais pour les films : pas de saisons/épisodes,
+et l'association se fait par RECHERCHE TMDB sur le titre + l'année extraits du nom.
 
-Ecrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux) :
+Écrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux) :
   - le titre et la DATE de sortie dans les informations de segment
-    (sortie du pays de --language : fr-FR -> sortie francaise, pas la sortie d'origine)
-  - le synopsis, le realisateur, les scenaristes, le casting, les genres (tags)
+    (sortie du pays de --language : fr-FR -> sortie française, pas la sortie d'origine)
+  - le synopsis, le réalisateur, les scénaristes, le casting, les genres (tags)
   - l'IDENTIFIANT TMDB (tag "TMDB", au format Matroska "movie/1234")
-  - les tags de STATISTIQUES de piste (debit, duree, nb d'images)  [--no-stats]
+  - les tags de STATISTIQUES de piste (débit, durée, nb d'images)  [--no-stats]
   - l'affiche du film comme jaquette (attachment "cover.jpg")
-  - le nom des pistes AUDIO       -> codec + canaux + debit (ex. "E-AC-3 5.1 640 kb/s")
+  - le nom des pistes AUDIO       -> codec + canaux + débit (ex. "E-AC-3 5.1 640 kb/s")
   - le nom des pistes SOUS-TITRES -> uniquement les drapeaux actifs (Forced, SDH...), ou "Full"
-  - les DRAPEAUX 'par defaut'     -> une seule piste audio par defaut (la FR), aucun sous-titre
-  - les drapeaux FORCED et SDH    -> poses sur un sous-titre dont le NOM les annonce ("Francais
-    force", "English SDH") alors que le drapeau manque - sinon, le renommer d'apres ses seuls
+  - les DRAPEAUX 'par défaut'     -> une seule piste audio par défaut (la FR), aucun sous-titre
+  - les drapeaux FORCED et SDH    -> posés sur un sous-titre dont le NOM les annonce ("Français
+    force", "English SDH") alors que le drapeau manque - sinon, le renommer d'après ses seuls
     drapeaux effacerait l'information. Une seule piste par langue, et rien dans une langue qui
-    declare deja le drapeau.  [--no-flags]
+    declare déjà le drapeau.  [--no-flags]
 
-Un film dont une piste est AMBIGUE n'est pas traite du tout - pas meme ses autres fichiers :
-un nom qui dit "force" sans drapeau transposable, ou deux pistes de meme langue qui
-porteraient le meme nom (deux "Full" francais, que plus rien ne distingue). Rien n'est
-modifie, la raison est affichee sous [NON TRAITE], et le bilan les compte.
+Un film dont une piste est AMBIGUË n'est pas traité du tout - pas même ses autres fichiers :
+un nom qui dit "force" sans drapeau transposable, ou deux pistes de même langue qui
+porteraient le même nom (deux "Full" français, que plus rien ne distingue). Rien n'est
+modifié, la raison est affichée sous [NON TRAITE], et le bilan les compte.
 
-Deux situations que le script refuse de trancher seul, et qu'il met de cote pour poser la
-QUESTION A LA FIN du passage : plusieurs fiches ecrivent le meme titre autrement ("Les Quatre
-Fantastiques" et "Les 4 Fantastiques"), ou plusieurs fiches portent le MEME titre ("Dracula"
+Deux situations que le script refuse de trancher seul, et qu'il met de côté pour poser la
+QUESTION À LA FIN du passage : plusieurs fiches écrivent le même titre autrement ("Les Quatre
+Fantastiques" et "Les 4 Fantastiques"), ou plusieurs fiches portent le MÊME titre ("Dracula"
 en rend trois, "Mortal Kombat" deux). Dans les deux cas seules comptent les fiches assez
-votees pour etre credibles : presque tout titre a un homonyme obscur quelque part, et sans ce
-filtre un cinquieme de la mediatheque poserait une question.
-Dans le terminal : candidats numerotes, le plus vote en tete, Entree le garde, i laisse le
-film de cote, q arrete les questions. Une suite ("Iron Man 2") n'est pas une variante et ne
-declenche rien. Hors terminal (sortie redirigee, CI), les films restent de cote plutot que de
-bloquer le passage ; --no-ask retablit l'ancien comportement, le premier resultat sans rien
+votées pour être crédibles : presque tout titre à un homonyme obscur quelque part, et sans ce
+filtre un cinquième de la médiathèque poserait une question.
+Dans le terminal : candidats numérotés, le plus vote en tête, Entrée le garde, i laisse le
+film de côté, q arrête les questions. Une suite ("Iron Man 2") n'est pas une variante et ne
+declenche rien. Hors terminal (sortie redirigée, CI), les films restent de côté plutôt que de
+bloquer le passage ; --no-ask rétablit l'ancien comportement, le premier résultat sans rien
 demander.
 
-Dependances EXTERNES (dans le PATH) : mkvpropedit + mkvmerge + mkvextract (MKVToolNix),
+Dépendances EXTERNES (dans le PATH) : mkvpropedit + mkvmerge + mkvextract (MKVToolNix),
 ffprobe (FFmpeg).
-Aucune dependance pip. Necessite Internet (API TMDB + jaquettes).
-Le code partage avec les autres scripts du depot vit dans mkvlib/ (a la racine).
+Aucune dépendance pip. Necessite Internet (API TMDB + jaquettes).
+Le code partage avec les autres scripts du dépôt vit dans mkvlib/ (à la racine).
 
-Cle TMDB : ligne TMDB_KEY=... du fichier .env, a la racine du depot. C'est la seule
-source, et le meme .env sert a tous les scripts : la cle n'est ecrite qu'une fois.
+Clé TMDB : ligne TMDB_KEY=... du fichier .env, à la racine du dépôt. C'est la seule
+source, et le même .env sert à tous les scripts : la clé n'est écrite qu'une fois.
 
-Structure libre : --dir est parcouru RECURSIVEMENT, aussi profond qu'il y a des dossiers.
+Structure libre : --dir est parcouru RÉCURSIVEMENT, aussi profond qu'il y a des dossiers.
 Seuls les .mkv sont des films - un dossier ne compte ni ne se traite jamais comme un film,
-il ne fait que ranger. Un dossier qui ne contient qu'un film et rien en dessous lui prete
+il ne fait que ranger. Un dossier qui ne contient qu'un film et rien en dessous lui prête
 son nom ("Inception (2010)/film.mkv") ; partout ailleurs c'est le nom du FICHIER qui parle,
-et le dossier IMMEDIAT sert de renfort a la recherche : "Resident Evil/2 - Apocalypse.mkv"
+et le dossier IMMÉDIAT sert de renfort à la recherche : "Resident Evil/2 - Apocalypse.mkv"
 cherche "Apocalypse" (qui rend "Amour Apocalypse"...) puis "Resident Evil Apocalypse", et ne
-retient le renfort que si le titre trouve contient a la fois le dossier et ce qu'on cherchait.
-Lui seul : au-dessus vivent les dossiers de rangement d'une mediatheque ("_Marvel", "_DC"),
+retient le renfort que si le titre trouvé contient à la fois le dossier et ce qu'on cherchait.
+Lui seul : au-dessus vivent les dossiers de rangement d'une médiathèque ("_Marvel", "_DC"),
 qui ne sont pas des sagas.
-Un film coupe en plusieurs fichiers (CD1/CD2) recoit les memes metadonnees partout ; les
-bandes-annonces et making-of poses a cote sont reconnus A LEUR NOM et laisses de cote, comme
+Un film coupe en plusieurs fichiers (CD1/CD2) reçoit les mêmes métadonnées partout ; les
+bandes-annonces et making-of posés à côté sont reconnus À LEUR NOM et laissés de côté, comme
 les dossiers de bonus (Extras, Featurettes...). Le poids des fichiers ne decide de rien : un
 dessin anime de 1 Go est un film autant qu'un remux de 28 Go.
-Un prefixe d'ordre de saga "{n} - " est detecte et retire pour la recherche ("1 - Iron Man"
--> recherche "Iron Man"), demi-numeros compris ("1.5 - Dark Fury") ; l'ordre est inscrit comme
-numero dans la collection (tag PART_NUMBER).
-A titre egal, TMDB classe par POPULARITE : une fiche portant EXACTEMENT le titre cherche passe
+Un préfixe d'ordre de saga "{n} - " est détecté et retire pour la recherche ("1 - Iron Man"
+-> recherche "Iron Man"), demi-numéros compris ("1.5 - Dark Fury") ; l'ordre est inscrit comme
+numéro dans la collection (tag PART_NUMBER).
+À titre égal, TMDB classe par POPULARITÉ : une fiche portant EXACTEMENT le titre cherché passe
 donc devant ("Blade" doit rendre Blade, pas Blade II).
 
-Un dossier de saga n'est pas une reunion de fichiers independants : c'est une COLLECTION
+Un dossier de saga n'est pas une réunion de fichiers indépendants : c'est une COLLECTION
 TMDB, que l'API donne en entier. Les dossiers qui contiennent plusieurs films sont donc
-reexamines DE L'INTERIEUR : la saga est cherchee par le NOM du dossier (le seul signal qu'un
+réexaminés DE L'INTÉRIEUR : la saga est cherchée par le NOM du dossier (le seul signal qu'un
 film mal associe ne peut pas fausser), puis parmi celles vers lesquelles plusieurs films
-pointent deja. Les fichiers lui sont ensuite apparies un a un - le numero d'ordre d'abord, la
+pointent déjà. Les fichiers lui sont ensuite apparies un à un - le numéro d'ordre d'abord, la
 ressemblance du titre ensuite, et chaque film de la saga ne servant qu'une fois, les titres
-muets heritent de ce qui reste. Un homonyme qui existe dans 900 000 films n'existe pas dans
-une saga de 26 : "Le defi" ne peut plus ramener Batman, ni "Vendetta" ramener V pour Vendetta.
-La numerotation du dossier doit tenir dans la collection, faute de quoi un dossier de
-rangement (le MCU numerote 35 films) se ferait passer pour une saga.  [--no-saga]
+muets héritent de ce qui reste. Un homonyme qui existe dans 900 000 films n'existe pas dans
+une saga de 26 : "Le défi" ne peut plus ramener Batman, ni "Vendetta" ramener V pour Vendetta.
+La numérotation du dossier doit tenir dans la collection, faute de quoi un dossier de
+rangement (le MCU numéroté 35 films) se ferait passer pour une saga.  [--no-saga]
 L'identifiant TMDB retenu est INSCRIT DANS LE FILM : au passage suivant, il est relu et plus
-rien n'est cherche - l'association survit donc au renommage, et ne peut plus se tromper deux
-fois de la meme facon. La relecture ne coute un sous-processus de plus que sur les fichiers
-qui declarent des tags : une mediatheque jamais etiquetee ne paie rien.
-Ordre de priorite : --tmdb-id, puis l'identifiant epingle dans le NOM, puis celui lu dans le
-FICHIER, puis la recherche. Si un passage a inscrit le mauvais identifiant, corrige-le en
-epinglant le bon dans le nom - "Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - le
-passage suivant le reecrira dans le fichier.
+rien n'est cherché - l'association survit donc au renommage, et ne peut plus se tromper deux
+fois de la même façon. La relecture ne coûte un sous-processus de plus que sur les fichiers
+qui déclarent des tags : une médiathèque jamais étiquetée ne paie rien.
+Ordre de priorité : --tmdb-id, puis l'identifiant épinglé dans le NOM, puis celui lu dans le
+FICHIER, puis la recherche. Si un passage à inscrit le mauvais identifiant, corrige-le en
+épinglant le bon dans le nom - "Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - le
+passage suivant le réécrira dans le fichier.
 
 Usage :
-  python Metadata.py --dir "D:\Films"                         # simulation (n'ecrit rien)
+  python Metadata.py --dir "D:\Films"                         # simulation (n'écrit rien)
   python Metadata.py --dir "D:\Films" --apply                 # applique
   python Metadata.py --dir "D:\Films\Inception (2010)" --tmdb-id 27205 --apply   # force l'id (1 film)
-  python Metadata.py --dir "D:\Films" --verify                # verifie seulement
+  python Metadata.py --dir "D:\Films" --verify                # vérifie seulement
 
-Options : --apply --verify --skip-done --artwork --recap --no-tag --no-cache --no-ask
+Options : --apply --verify --skip-done --artwork --récap --no-tag --no-cache --no-ask
           --no-saga
           --no-cover --no-date --no-audio-names --no-sub-names --no-flags --no-stats
-          --tmdb-id (force, si un seul film) --language (defaut fr-FR) --image-size (w780)
+          --tmdb-id (force, si un seul film) --language (défaut fr-FR) --image-size (w780)
 
-A chaque passage, un JOURNAL est ecrit a la racine de --dir : "metadata.log" donne le lien
+À chaque passage, un JOURNAL est écrit à la racine de --dir : "metadata.log" donne le lien
 TMDB de chaque film trouve, et groupe en fin de fichier ceux qui n'en ont pas - non associes,
-ou laisses en attente d'une reponse.
+ou laissés en attente d'une réponse.
 
---recap genere une fiche HTML de la mediatheque a la racine de --dir : mur d'affiches
-groupe par saga, avec les films qui MANQUENT a chaque saga (TMDB en connait la
-composition). Fichier unique, les affiches sont encodees dedans. --no-tag genere les
+--récap genere une fiche HTML de la médiathèque à la racine de --dir : mur d'affiches
+groupe par saga, avec les films qui MANQUENT à chaque saga (TMDB en connaît la
+composition). Fichier unique, les affiches sont encodées dedans. --no-tag genere les
 annexes sans rien modifier dans les .mkv.
 """
 
@@ -113,7 +113,7 @@ from datetime import datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # pour importer mkvlib
 from mkvlib import artwork, cache, cli, embed, lookup, mkv, naming  # noqa: E402
 from mkvlib import saga as saga_module  # noqa: E402
 from mkvlib.tmdb import (Tmdb, TmdbAuthError, TmdbError,   # noqa: E402
@@ -121,7 +121,7 @@ from mkvlib.tmdb import (Tmdb, TmdbAuthError, TmdbError,   # noqa: E402
 
 
 # ----------------------------------------------------------------------------
-# 1. Etat vise pour un film (TargetTypeValue 50 = film, 70 = collection/saga)
+# 1. État vise pour un film (TargetTypeValue 50 = film, 70 = collection/saga)
 # ----------------------------------------------------------------------------
 def build_movie_tags_xml(movie, max_actors=20):
     credits = movie.get("credits", {})
@@ -130,14 +130,13 @@ def build_movie_tags_xml(movie, max_actors=20):
     collection = (movie.get("belongs_to_collection") or {}).get("name")
     if collection:
         lines = [mkv.simple("TITLE", collection)]
-        if movie.get("_order"):                       # ordre de la saga (prefixe "{n} - ")
+        if movie.get("_order"):                       # ordre de la saga (préfixe "{n} - ")
             lines.append(mkv.simple("PART_NUMBER", movie["_order"]))
         blocks.append(mkv.tag_block(70, lines))
 
     lines = [mkv.simple("TITLE", movie.get("title", ""))]
     if movie.get("id"):
-        # L'association elle-meme, inscrite dans le film : au passage suivant,
-        # plus rien n'est cherche, donc plus rien ne peut se tromper.
+        # L'association elle-même, inscrite dans le film : au passage suivant, plus rien n'est cherché, donc plus rien ne peut se tromper.
         lines.append(mkv.simple(mkv.TMDB_TAG, mkv.tmdb_value(movie["id"])))
     if movie.get("overview"):
         lines.append(mkv.simple("SYNOPSIS", movie["overview"]))
@@ -154,12 +153,7 @@ def build_movie_tags_xml(movie, max_actors=20):
 
 def movie_target(movie, opts):
     """Ce que le .mkv de ce film devrait contenir."""
-    return mkv.Target(
-        title=movie.get("title", ""),
-        date=movie.get("release_date"),
-        tags_xml=build_movie_tags_xml(movie),
-        poster=movie.get("poster_path") if opts.cover else None,
-    )
+    return mkv.Target(title=movie.get("title", ""), date=movie.get("release_date"), tags_xml=build_movie_tags_xml(movie), poster=movie.get("poster_path") if opts.cover else None,)
 
 
 # ----------------------------------------------------------------------------
@@ -181,8 +175,7 @@ def process_file(path, lecture, movie, args, opts, tmdb):
         return (1 if diffs else 0), 0
 
     if opts.date and target.date:
-        origine = (f" (sortie {movie['_date_region']})" if movie.get("_date_region")
-                   else " (sortie d'origine)")
+        origine = (f" (sortie {movie['_date_region']})" if movie.get("_date_region") else " (sortie d'origine)")
         print(f"      date -> {target.date}{origine}")
     for line in mkv.track_preview_lines(info, opts):
         print(line)
@@ -198,11 +191,9 @@ def process_file(path, lecture, movie, args, opts, tmdb):
 
 
 def report_conflicts(entry, lectures, opts):
-    """Affiche ce qui bloque l'etiquetage du film, et dit si ca bloque.
+    """Affiche ce qui bloque l'étiquetage du film, et dit si ça bloque.
 
-    Un film dont une piste est ambigue n'est pas traite DU TOUT - pas meme ses
-    autres fichiers : a moitie etiquete, il aurait l'air fait, et le souci
-    passerait a la trappe au passage suivant.
+    Un film dont une piste est ambiguë n'est pas traité DU TOUT - pas même ses autres fichiers : à moitié etiquete, il aurait l'air fait, et le souci passerait à la trappe au passage suivant.
     """
     soucis = [(path, mkv.track_conflicts(lectures[path].info, opts)) for path in entry.files]
     if not any(raisons for _, raisons in soucis):
@@ -218,8 +209,7 @@ def report_conflicts(entry, lectures, opts):
 def process_movie(entry, movie, lectures, args, opts, tmdb):
     """Traite tous les fichiers d'un film et retourne son Report.
 
-    Un film peut occuper plusieurs fichiers : chacun recoit les memes metadonnees,
-    et son nom est rappele pour qu'on sache lequel parle.
+    Un film peut occuper plusieurs fichiers : chacun reçoit les mêmes métadonnées, et son nom est rappelé pour qu'on sache lequel parle.
     """
     if report_conflicts(entry, lectures, opts):
         return mkv.Report(matched=1, total=1, skipped=1)
@@ -236,20 +226,17 @@ def process_movie(entry, movie, lectures, args, opts, tmdb):
 
 
 def write_artwork(entry, movie, args, tmdb):
-    """Ecrit folder.jpg a cote du film. Appele meme sous --no-tag, qui ne doit
-    empecher que la modification des .mkv, pas la generation des annexes."""
-    poster = artwork.english_poster(
-        lambda: tmdb.movie(movie["id"], artwork.ARTWORK_LANG),
-        movie.get("poster_path"))
+    """Écrit folder.jpg à côté du film. Appele même sous --no-tag, qui ne doit empêcher que la modification des .mkv, pas la génération des annexes."""
+    poster = artwork.english_poster(lambda: tmdb.movie(movie["id"], artwork.ARTWORK_LANG), movie.get("poster_path"))
     apply = args.apply and not args.verify
     print(f"      affiche (EN) : {artwork.write_poster(poster, entry.folder, apply, tmdb)}")
 
 
 @dataclass
 class Library:
-    """Ce qui s'accumule au fil du passage, au-dela du Report."""
-    resolved: list          # fiches TMDB retenues, pour la fiche recap
-    seen: dict              # {id TMDB: film deja vu} - detection des doublons
+    """Ce qui s'accumule au fil du passage, au-delà du Report."""
+    resolved: list          # fiches TMDB retenues, pour la fiche récap
+    seen: dict              # {id TMDB: film déjà vu} - détection des doublons
     lectures: dict          # {chemin: Reading}
     journal: list = field(default_factory=list)   # (nom affiche, id TMDB, statut)
 
@@ -259,22 +246,18 @@ class Library:
 
 
 def write_log(root_dir, library, args, report):
-    """Ecrit le journal du passage : un lien TMDB par film, les vides a la fin.
+    """Écrit le journal du passage : un lien TMDB par film, les vides à la fin.
 
-    Le terminal defile et se perd ; ce fichier reste. Les films sans lien sont
-    groupes en fin de fichier : ce sont eux qui demandent quelque chose.
+    Le terminal defile et se perd ; ce fichier reste. Les films sans lien sont groupés en fin de fichier : ce sont eux qui demandent quelque chose.
     """
     out = Path(root_dir) / "metadata.log"
     trouves = [(nom, mid, st) for nom, mid, st in library.journal if mid]
     vides = [(nom, st) for nom, mid, st in library.journal if not mid]
     largeur = min(max((len(nom) for nom, _, _ in library.journal), default=0), 70)
 
-    lignes = [f"# Metadata.py - {Path(root_dir).resolve()}",
-              f"# {datetime.now():%Y-%m-%d %H:%M} - {cli.mode_label(args)}",
-              f"# {report.matched}/{report.total} film(s) associe(s)", ""]
+    lignes = [f"# Metadata.py - {Path(root_dir).resolve()}", f"# {datetime.now():%Y-%m-%d %H:%M} - {cli.mode_label(args)}", f"# {report.matched}/{report.total} film(s) associe(s)", ""]
     for nom, movie_id, statut in trouves:
-        lignes.append(f"{nom:<{largeur}}  {movie_url(movie_id)}"
-                      + (f"  {statut}" if statut else ""))
+        lignes.append(f"{nom:<{largeur}}  {movie_url(movie_id)}" + (f"  {statut}" if statut else ""))
     if vides:
         lignes += ["", f"# --- sans lien ({len(vides)}) ---"]
         lignes += [f"{nom:<{largeur}}  {statut}" for nom, statut in vides]
@@ -288,11 +271,10 @@ def write_log(root_dir, library, args, report):
 
 
 def handle_movie(entry, movie, library, args, opts, tmdb):
-    """Traite un film dont l'association est arretee. Retourne son Report."""
+    """Traite un film dont l'association est arrêtée. Retourne son Report."""
     jumeau = library.seen.setdefault(movie.get("id"), entry.display)
     if jumeau != entry.display:
-        # Deux dossiers pour un meme film : les deux sont etiquetes (une VF et
-        # une 4K le meritent), mais le recap n'en montrera qu'une vignette.
+        # Deux dossiers pour un même film : les deux sont étiquetés (une VF et une 4K le méritent), mais le récap n'en montrera qu'une vignette.
         print(f"  [DOUBLON] meme film que '{jumeau}' -> les deux seront traites")
     library.resolved.append(movie)
     if args.no_tag:
@@ -302,16 +284,14 @@ def handle_movie(entry, movie, library, args, opts, tmdb):
         report = process_movie(entry, movie, library.lectures, args, opts, tmdb)
     if args.artwork and entry.owns_folder:
         write_artwork(entry, movie, args, tmdb)
-    library.note(entry.display, movie.get("id"),
-                 "[NON TRAITE]" if report.skipped else "")
+    library.note(entry.display, movie.get("id"), "[NON TRAITE]" if report.skipped else "")
     return report
 
 
 def resolve_pending(attente, library, args, opts, tmdb):
-    """Pose les questions mises de cote, puis traite les films confirmes.
+    """Pose les questions mises de côté, puis traite les films confirmés.
 
-    Les questions attendent la fin pour ne pas hacher le passage : le script
-    deroule d'abord tout ce qu'il sait faire seul, et n'arbitre qu'ensuite.
+    Les questions attendent la fin pour ne pas hacher le passage : le script déroule d'abord tout ce qu'il sait faire seul, et n'arbitre qu'ensuite.
     """
     print(f"=== {len(attente)} association(s) a confirmer ===")
     if not cli.can_ask():
@@ -330,8 +310,7 @@ def resolve_pending(attente, library, args, opts, tmdb):
         for note in doute.notes:
             print(f"      /!\\ {note}")
         for rang, candidat in enumerate(doute.candidates, 1):
-            print(f"      {rang}) {lookup.describe(candidat)}"
-                  + ("   (defaut)" if rang == 1 else ""))
+            print(f"      {rang}) {lookup.describe(candidat)}" + ("   (defaut)" if rang == 1 else ""))
         choix = cli.ASK_SKIP if arrete else cli.ask_choice(len(doute.candidates))
         if choix == cli.ASK_STOP:
             arrete, choix = True, cli.ASK_SKIP
@@ -354,7 +333,7 @@ def resolve_pending(attente, library, args, opts, tmdb):
 
 
 def movie_details(movie_id, order, args, tmdb):
-    """Fiche complete d'un film : credits, genres, et date de sortie NATIONALE."""
+    """Fiche complète d'un film : crédits, genres, et date de sortie NATIONALE."""
     try:
         movie = tmdb.movie(movie_id)
     except TmdbError as e:
@@ -362,10 +341,9 @@ def movie_details(movie_id, order, args, tmdb):
         return None
     movie["_order"] = order
 
-    # Sortie nationale (fr-FR -> FR) : sans ca, TMDB donne la sortie d'origine.
+    # Sortie nationale (fr-FR -> FR) : sans ça, TMDB donne la sortie d'origine.
     region = release_region(args.language)
-    local = (tmdb.local_release_date(movie_id, region)
-             if region and not args.no_date else None)
+    local = (tmdb.local_release_date(movie_id, region) if region and not args.no_date else None)
     if local:
         movie["release_date"], movie["_date_region"] = local, region
     return movie
@@ -380,28 +358,20 @@ def folder_groups(movies):
 
 
 def saga_candidates(dossier, vues, tmdb):
-    """[[films d'une collection], ...] a essayer pour ce dossier, la plus sure d'abord.
+    """[[films d'une collection], ...] à essayer pour ce dossier, la plus sure d'abord.
 
-    Le NOM du dossier passe devant : c'est le seul signal qu'un film mal associe
-    ne peut pas fausser, et un dossier dont tous les films sont faux ne designe
-    aucune saga - c'est pourtant celui qui a le plus besoin d'aide. Vient ensuite
-    la saga vers laquelle plusieurs films pointent deja, utile quand le dossier
-    ne porte pas le nom de sa saga.
+    Le NOM du dossier passe devant : c'est le seul signal qu'un film mal associé ne peut pas fausser, et un dossier dont tous les films sont faux ne désigne aucune saga - c'est pourtant celui qui a le plus besoin d'aide. Vient ensuite la saga vers laquelle plusieurs films pointent déjà, utile quand le dossier ne porte pas le nom de sa saga.
 
-    Plusieurs pistes plutot qu'une seule : un dossier chevauche parfois deux
-    collections (les Tortues Ninja de 1990 et le reboot de 2014).
+    Plusieurs pistes plutôt qu'une seule : un dossier chevauche parfois deux collections (les Tortues Ninja de 1990 et le reboot de 2014).
 
-    Le controle de numerotation, lui, se fait au moment de l'appariement : il
-    depend des fichiers qui restent a placer.
+    Le contrôle de numérotation, lui, se fait au moment de l'appariement : il dépend des fichiers qui restent à placer.
     """
     pistes = []
     try:
         trouvees = tmdb.search_collection(dossier.name)
     except TmdbError:
         trouvees = []
-    # La saga trouvee par le nom doit vraiment ressembler au dossier : une
-    # mediatheque nommee "films" ramene "MIRRORLIAR FILMS", et "_Marvel"
-    # ramene "Marvel Rising Collection" - ni l'une ni l'autre n'est une saga.
+    # La saga trouvée par le nom doit vraiment ressembler au dossier : une médiathèque nommée "films" ramène "MIRRORLIAR FILMS", et "_Marvel" ramène "Marvel Rising Collection" - ni l'une ni l'autre n'est une saga.
     for c in trouvees[:1]:
         if saga_module.close_to(dossier.name, c.get("name") or "") >= saga_module.MIN_SCORE:
             pistes.append(c["id"])
@@ -423,31 +393,23 @@ def saga_candidates(dossier, vues, tmdb):
 def saga_corrections(movies, lectures, args, tmdb):
     """{nom affiche: fiche TMDB} pour les films qu'une collection replace mieux.
 
-    Passe silencieuse, avant tout le reste. Chaque film d'un dossier multiple est
-    resolu comme d'habitude, puis le dossier est reexamine DE L'INTERIEUR : les
-    fichiers sont apparies aux films de la saga, un a un. Un homonyme qui existe
-    dans 900 000 films n'existe pas dans une saga de 26 - "Le defi" ne peut plus
-    ramener Batman, ni "Vendetta" ramener V pour Vendetta.
+    Passe silencieuse, avant tout le reste. Chaque film d'un dossier multiple est résolu comme d'habitude, puis le dossier est réexamine DE L'INTÉRIEUR : les fichiers sont appariés aux films de la saga, un à un. Un homonyme qui existe dans 900 000 films n'existe pas dans une saga de 26 - "Le défi" ne peut plus ramener Batman, ni "Vendetta" ramener V pour Vendetta.
 
-    Les recherches sont rejouees ensuite par la boucle principale, mais le cache
-    des reponses TMDB les rend gratuites.
+    Les recherches sont rejouées ensuite par la boucle principale, mais le cache des réponses TMDB les rend gratuites.
     """
     corrections = {}
     for dossier, entrees in folder_groups(movies).items():
         fixes, fiches, vues, fichiers = set(), {}, [], []
         for entry in entrees:
             with contextlib.redirect_stdout(io.StringIO()):
-                movie, doute = resolve_movie(entry.rawname, args, tmdb,
-                                             single=False, contexts=entry.contexts,
-                                             tag_id=tag_movie_id(entry, lectures))
+                movie, doute = resolve_movie(entry.rawname, args, tmdb, single=False, contexts=entry.contexts, tag_id=tag_movie_id(entry, lectures))
                 if movie is None and doute is not None:
                     movie = movie_details(doute.candidates[0]["id"], None, args, tmdb)
             if movie is None:
                 continue
             fiches[entry.display] = movie
             vues.append((movie.get("belongs_to_collection") or {}).get("id"))
-            # Un identifiant epingle ou deja inscrit dans le film ne se discute
-            # pas : il retient sa fiche, et personne d'autre ne peut l'avoir.
+            # Un identifiant épinglé ou déjà inscrit dans le film ne se discute pas : il retient sa fiche, et personne d'autre ne peut l'avoir.
             if naming.extract_tmdb_id(entry.rawname)[0] or tag_movie_id(entry, lectures):
                 fixes.add(movie.get("id"))
                 continue
@@ -473,7 +435,7 @@ def saga_corrections(movies, lectures, args, tmdb):
 
 
 def tag_movie_id(entry, lectures):
-    """Identifiant TMDB deja inscrit dans les fichiers du film, ou None."""
+    """Identifiant TMDB déjà inscrit dans les fichiers du film, ou None."""
     for path in entry.files:
         lecture = lectures.get(path)
         ident = mkv.tmdb_id(lecture.tags) if lecture else None
@@ -485,11 +447,9 @@ def tag_movie_id(entry, lectures):
 def resolve_movie(rawname, args, tmdb, single, contexts=(), tag_id=None, saga=None):
     """(film, doute) pour un nom de dossier/fichier. (None, None) si rien ne colle.
 
-    `contexts` liste les dossiers au-dessus du film, du plus proche au plus
-    lointain : ils servent de renfort a la recherche, pas de remplacants.
+    `contexts` liste les dossiers au-dessus du film, du plus proche au plus lointain : ils servent de renfort à la recherche, pas de remplaçants.
 
-    Un `doute` non nul veut dire que plusieurs fiches ecrivent le meme titre :
-    le film n'est alors PAS charge, et la question est posee en fin de passage.
+    Un `doute` non nul veut dire que plusieurs fiches écrivent le même titre : le film n'est alors PAS charge, et la question est posée en fin de passage.
     """
     pinned, rawname = naming.extract_tmdb_id(rawname)
     title, year, order = naming.parse_title_year(rawname)
@@ -501,8 +461,7 @@ def resolve_movie(rawname, args, tmdb, single, contexts=(), tag_id=None, saga=No
             print(f"  id epingle dans le nom : {lookup.describe(movie)}")
         return movie, None
     if tag_id:
-        # Le nom passe avant : c'est le seul moyen de corriger un identifiant
-        # qu'un passage precedent aurait inscrit de travers.
+        # Le nom passe avant : c'est le seul moyen de corriger un identifiant qu'un passage précédent aurait inscrit de travers.
         movie = movie_details(tag_id, order, args, tmdb)
         if movie:
             print(f"  id lu dans le fichier : {lookup.describe(movie)}")
@@ -519,31 +478,26 @@ def resolve_movie(rawname, args, tmdb, single, contexts=(), tag_id=None, saga=No
         print(f"  echec recherche TMDB : {e}\n")
         return None, None
     if not results:
-        print(f"  [NON ASSOCIE] recherche '{title}'"
-              + (f" ({year})" if year else "") + " -> aucun resultat\n")
+        print(f"  [NON ASSOCIE] recherche '{title}'" + (f" ({year})" if year else "") + " -> aucun resultat\n")
         return None, None
     best, notes = lookup.pick_result(results, query)
-    print(f"  recherche : '{query}'" + (f" ({year})" if year else "")
-          + (f" [ordre {order}]" if order else "")
-          + f" -> {lookup.describe(best)}")
+    print(f"  recherche : '{query}'" + (f" ({year})" if year else "") + (f" [ordre {order}]" if order else "") + f" -> {lookup.describe(best)}")
     for note in notes:
         print(f"  /!\\ {note}")
 
-    # Deux facons de ne pas pouvoir trancher : le meme titre ecrit autrement
-    # ("Les 4 Fantastiques"), ou le meme titre porte par deux films (un remake).
+    # Deux façons de ne pas pouvoir trancher : le même titre écrit autrement ("Les 4 Fantastiques"), ou le même titre porte par deux films (un remake).
     doutes = lookup.rival_versions(query, results) + lookup.twin_versions(results, best)
     if doutes and not args.no_ask:
-        return None, lookup.Doubt(query=query, notes=notes, order=order,
-                                  candidates=lookup.choice_list(results, best, doutes))
+        return None, lookup.Doubt(query=query, notes=notes, order=order, candidates=lookup.choice_list(results, best, doutes))
     return movie_details(best["id"], order, args, tmdb), None
 
 
 # ----------------------------------------------------------------------------
-# 3. Fiche recap de la mediatheque
+# 3. Fiche récap de la médiathèque
 # ----------------------------------------------------------------------------
 @dataclass
 class Card:
-    """Une vignette de la fiche : un film possede, ou un film qui manque a une saga."""
+    """Une vignette de la fiche : un film possède, ou un film qui manque à une saga."""
     title: str
     date: str = ""
     poster: str | None = None
@@ -557,16 +511,11 @@ class Card:
 
 
 def _card(movie, owned=True):
-    return Card(title=movie.get("title", ""),
-                date=movie.get("release_date") or "",
-                poster=movie.get("poster_path"),
-                owned=owned,
-                runtime=movie.get("runtime"),
-                overview=movie.get("overview") or "")
+    return Card(title=movie.get("title", ""), date=movie.get("release_date") or "", poster=movie.get("poster_path"), owned=owned, runtime=movie.get("runtime"), overview=movie.get("overview") or "")
 
 
 def fetch_collections(movies, tmdb):
-    """{id de saga: composition TMDB} pour les sagas des films trouves."""
+    """{id de saga: composition TMDB} pour les sagas des films trouvés."""
     sagas = {}
     for movie in movies:
         info = movie.get("belongs_to_collection") or {}
@@ -583,8 +532,7 @@ def fetch_collections(movies, tmdb):
 def library_sections(movies, sagas):
     """[(titre de section, [Card, ...]), ...] : une section par saga, puis le reste.
 
-    Une saga apparait avec TOUS ses films - ceux qu'on possede et les autres -
-    dans l'ordre de sortie : c'est ce qui rend visible ce qui manque a la collection.
+    Une saga apparait avec TOUS ses films - ceux qu'on possède et les autres - dans l'ordre de sortie : c'est ce qui rend visible ce qui manque à la collection.
     """
     owned = {m.get("id"): m for m in movies}
     sections, classes = [], set()
@@ -599,13 +547,12 @@ def library_sections(movies, sagas):
             sections.append((saga.get("name", "Saga"), cards))
     seuls = [m for m in movies if m.get("id") not in classes]
     if seuls:
-        sections.append(("Hors saga",
-                         [_card(m) for m in sorted(seuls, key=lambda m: m.get("title", ""))]))
+        sections.append(("Hors saga", [_card(m) for m in sorted(seuls, key=lambda m: m.get("title", ""))]))
     return sections
 
 
 def collect_posters(sections, size):
-    """{cle: chemin TMDB} pour toutes les affiches de la fiche."""
+    """{clé: chemin TMDB} pour toutes les affiches de la fiche."""
     needed = {}
     for _, cards in sections:
         for card in cards:
@@ -616,10 +563,9 @@ def collect_posters(sections, size):
 
 
 def build_recap_html(library_name, sections, posters, size):
-    """Rend la fiche HTML (pur rendu : ni reseau ni disque).
+    """Rend la fiche HTML (pur rendu : ni réseau ni disque).
 
-    Les films manquants d'une saga sont grises et etiquetes, comme les episodes
-    absents dans la fiche d'une serie."""
+    Les films manquants d'une saga sont grises et étiquetés, comme les épisodes absents dans la fiche d'une série."""
     def esc(s):
         return escape(str(s or ""))
 
@@ -629,8 +575,7 @@ def build_recap_html(library_name, sections, posters, size):
         possedes = sum(1 for c in cards if c.owned)
         total += possedes
         manquants += len(cards) - possedes
-        compteur = (f"<span class='cnt'>{possedes}/{len(cards)}</span>"
-                    if len(cards) != possedes else "")
+        compteur = (f"<span class='cnt'>{possedes}/{len(cards)}</span>" if len(cards) != possedes else "")
         vignettes = []
         for card in cards:
             key = embed.image_key(card.poster, size)
@@ -684,14 +629,13 @@ def build_recap_html(library_name, sections, posters, size):
 
 
 def write_recap(root_dir, movies, args, tmdb):
-    """Ecrit recap.html a la racine de --dir. Ne telecharge rien en simulation."""
+    """Écrit récap.html à la racine de --dir. Ne télécharge rien en simulation."""
     apply = args.apply and not args.verify
     out = Path(root_dir) / "recap.html"
     print("--- annexes ---")
     sections = library_sections(movies, fetch_collections(movies, tmdb))
     needed = collect_posters(sections, args.poster_size)
-    posters = (embed.fetch(needed, embed.read_embedded(out), args.poster_size,
-                           tmdb, label="affiche") if apply else {})
+    posters = (embed.fetch(needed, embed.read_embedded(out), args.poster_size, tmdb, label="affiche") if apply else {})
     html = build_recap_html(Path(root_dir).resolve().name, sections, posters, args.poster_size)
     if not apply:
         print(f"  [mediatheque] ecrirait {out.name}")
@@ -706,16 +650,12 @@ def write_recap(root_dir, movies, args, tmdb):
 # ----------------------------------------------------------------------------
 def parse_args():
     ap = argparse.ArgumentParser(description="Etiquette des films .mkv depuis TMDB (en francais).")
-    ap.add_argument("--dir", required=True,
-                    help="Dossier de films, parcouru recursivement (dossiers de saga compris)")
+    ap.add_argument("--dir", required=True, help="Dossier de films, parcouru recursivement (dossiers de saga compris)")
     ap.add_argument("--tmdb-id", help="Force l'id TMDB (utile si --dir ne contient qu'un seul film)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
-    ap.add_argument("--no-cache", action="store_true",
-                    help="Ignore le cache des reponses TMDB et le rafraichit")
-    ap.add_argument("--no-saga", action="store_true",
-                    help="N'utilise pas les collections TMDB pour replacer les films")
-    ap.add_argument("--no-ask", action="store_true",
-                    help="Ne pose aucune question : garde le 1er resultat TMDB, comme avant")
+    ap.add_argument("--no-cache", action="store_true", help="Ignore le cache des reponses TMDB et le rafraichit")
+    ap.add_argument("--no-saga", action="store_true", help="N'utilise pas les collections TMDB pour replacer les films")
+    ap.add_argument("--no-ask", action="store_true", help="Ne pose aucune question : garde le 1er resultat TMDB, comme avant")
     ap.add_argument("--apply", action="store_true", help="Applique reellement (defaut : simulation)")
     ap.add_argument("--verify", action="store_true", help="Verifie seulement (aucune ecriture)")
     ap.add_argument("--skip-done", action="store_true", help="Saute les films deja conformes")
@@ -725,13 +665,10 @@ def parse_args():
     ap.add_argument("--no-sub-names", action="store_true", help="Ne renomme pas les pistes de sous-titres")
     ap.add_argument("--no-flags", action="store_true", help="Ne touche pas aux drapeaux 'par defaut'")
     ap.add_argument("--no-stats", action="store_true", help="N'ajoute pas les tags de statistiques")
-    ap.add_argument("--no-tag", action="store_true",
-                    help="Ne modifie aucun film ; genere seulement folder.jpg / recap")
+    ap.add_argument("--no-tag", action="store_true", help="Ne modifie aucun film ; genere seulement folder.jpg / recap")
     ap.add_argument("--artwork", action="store_true", help="Ecrit folder.jpg (affiche EN) par film")
-    ap.add_argument("--recap", action="store_true",
-                    help="Genere une fiche recap HTML de la mediatheque (sagas et manquants)")
-    ap.add_argument("--poster-size", default="w185",
-                    help="Taille TMDB des affiches du recap (defaut : w185)")
+    ap.add_argument("--recap", action="store_true", help="Genere une fiche recap HTML de la mediatheque (sagas et manquants)")
+    ap.add_argument("--poster-size", default="w185", help="Taille TMDB des affiches du recap (defaut : w185)")
     ap.add_argument("--image-size", default="w780", help="Taille TMDB : w300 / w780 / original")
     return ap.parse_args()
 
@@ -742,8 +679,7 @@ def main():
     cli.check_dir(args.dir)
     args.probe = mkv.check_tools(needs_mkvtoolnix=not args.no_tag)
     opts = mkv.Options.from_args(args)
-    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="movies_mkv/1.0",
-                cache=cache.Cache(read=not args.no_cache))
+    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="movies_mkv/1.0", cache=cache.Cache(read=not args.no_cache))
 
     print(f"=== {cli.mode_label(args)} ===   source : TMDB {args.language}\n")
 
@@ -760,14 +696,11 @@ def main():
     if args.artwork and not any(e.owns_folder for e in movies):
         print("Note : --artwork sans effet ici : aucun dossier ne contient un seul film.\n")
 
-    # Toutes les lectures d'un coup, en parallele : chaque fichier coute deux a
-    # trois sous-processus qu'on ne fait qu'attendre, et rien la-dedans ne depend
-    # de TMDB. L'affichage, lui, garde son ordre.
+    # Toutes les lectures d'un coup, en parallèle : chaque fichier coûte deux à trois sous-processus qu'on ne fait qu'attendre, et rien la-dedans ne dépend de TMDB. L'affichage, lui, garde son ordre.
     lectures = {}
     if not args.no_tag:
         fichiers = [f for entry in movies for f in entry.files]
-        lectures = mkv.inspect_all(fichiers, args.probe,
-                                   with_tags=args.verify or args.skip_done)
+        lectures = mkv.inspect_all(fichiers, args.probe, with_tags=args.verify or args.skip_done)
 
     corrections = {} if args.no_saga else saga_corrections(movies, lectures, args, tmdb)
     if corrections:
@@ -777,10 +710,7 @@ def main():
     attente = []
     for entry in movies:
         print(f"--- {entry.display} ---")
-        movie, doute = resolve_movie(entry.rawname, args, tmdb, single=len(movies) == 1,
-                                     contexts=entry.contexts,
-                                     tag_id=tag_movie_id(entry, lectures),
-                                     saga=corrections.get(entry.display))
+        movie, doute = resolve_movie(entry.rawname, args, tmdb, single=len(movies) == 1, contexts=entry.contexts, tag_id=tag_movie_id(entry, lectures), saga=corrections.get(entry.display))
         if doute is not None:
             print("      [A CONFIRMER] plusieurs versions portent ce titre "
                   "-> question en fin de passage")

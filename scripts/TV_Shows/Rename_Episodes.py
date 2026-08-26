@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
 r"""
-Rename_Episodes.py — Renomme les episodes d'une serie avec les noms TMDB (en francais).
+Rename_Episodes.py — Renomme les épisodes d'une série avec les noms TMDB (en français).
 
-Format applique :  "{numero} - {nom de l'episode}.ext"
-  - Le numero est zero-padde pour avoir le MEME nombre de digits dans toute la saison
-    (largeur = nb de digits du plus grand numero, minimum 2).  ex : 01, 02, ... 15
-  - N'importe quel format video (mkv, mp4, avi, m4v, mov, ts...) : ne touche qu'au NOM.
-  - Les SOUS-TITRES poses a cote suivent leur video (.srt, .ass, .idx/.sub...), en
+Format applique :  "{numéro} - {nom de l'épisode}.ext"
+  - Le numéro est zero-padde pour avoir le MÊME nombre de digits dans toute la saison
+    (largeur = nb de digits du plus grand numéro, minimum 2).  ex : 01, 02, ... 15
+  - N'importe quel format vidéo (mkv, mp4, avi, m4v, mov, ts...) : ne touche qu'au NOM.
+  - Les SOUS-TITRES posés à côté suivent leur vidéo (.srt, .ass, .idx/.sub...), en
     conservant ce qui suit le nom : "S01E02.fr.forced.srt" -> "02 - Titre.fr.forced.srt".
   - N'a besoin d'AUCUN outil externe (ni MKVToolNix ni FFmpeg). Juste Internet pour TMDB.
 
-L'association fichier <-> episode se fait par le numero present dans le nom actuel
-(S01E05, 1x05, 05 - ..., Episode 5...), avec repli sur une correspondance de titre.
+L'association fichier <-> épisode se fait par le numéro présent dans le nom actuel
+(S01E05, 1x05, 05 - ..., Épisode 5...), avec repli sur une correspondance de titre.
 
-Cle TMDB : ligne TMDB_KEY=... du fichier .env, a la racine du depot.
+Clé TMDB : ligne TMDB_KEY=... du fichier .env, à la racine du dépôt.
 
 Structure : un sous-dossier "Saison N" par saison, ou --dir pointant sur un dossier de saison.
 
 Usage :
-  python Rename_Episodes.py --dir "D:\Series\Ma Serie"                  # simulation
-  python Rename_Episodes.py --dir "D:\Series\Ma Serie" --apply          # renomme
-  python Rename_Episodes.py --dir "D:\Series\Ma Serie" --tmdb-id 1234   # id force
+  python Rename_Episodes.py --dir "D:\Séries\Ma Série"                  # simulation
+  python Rename_Episodes.py --dir "D:\Séries\Ma Série" --apply          # renomme
+  python Rename_Episodes.py --dir "D:\Séries\Ma Série" --tmdb-id 1234   # id force
 
-La serie est identifiee par une recherche TMDB sur le nom du dossier ; --tmdb-id
+La série est identifiée par une recherche TMDB sur le nom du dossier ; --tmdb-id
 n'est utile que si la recherche se trompe ou ne trouve rien.
 """
 
@@ -31,18 +31,15 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pour importer mkvlib
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # pour importer mkvlib
 from mkvlib import cache, cli, lookup, naming, rename             # noqa: E402
 from mkvlib.tmdb import Tmdb, TmdbAuthError, TmdbError            # noqa: E402
 
 
 def plan_season(folder, season, threshold):
-    """Prevoit les renommages d'un dossier. Retourne (planned, tally).
+    """Prévoit les renommages d'un dossier. Retourne (planned, tally).
 
-    `planned` = [(source, destination), ...], videos et sous-titres melanges.
-    Deux fichiers qui visent le meme nom (deux versions du meme episode, par
-    exemple) sont signales ici : au moment d'ecrire, le second echouerait sans
-    explication.
+    `planned` = [(source, destination), ...], vidéos et sous-titres mélanges. Deux fichiers qui visent le même nom (deux versions du même épisode, par exemple) sont signalés ici : au moment d'écrire, le second échouerait sans explication.
     """
     episodes = season.get("episodes", [])
     by_num = {e.get("episode_number"): e for e in episodes}
@@ -50,7 +47,7 @@ def plan_season(folder, season, threshold):
         print("  aucune donnee d'episode TMDB pour cette saison")
         return [], rename.Tally()
 
-    width = max(2, len(str(max(by_num))))   # meme nb de digits pour toute la saison
+    width = max(2, len(str(max(by_num))))   # même nb de digits pour toute la saison
     files = naming.files_with_ext(folder, naming.VIDEO_EXTS)
     if not files:
         print("  aucun fichier video")
@@ -72,7 +69,7 @@ def plan_season(folder, season, threshold):
             continue
         claimed[key] = f
 
-        # Les sous-titres suivent meme quand la video, elle, est deja bien nommee.
+        # Les sous-titres suivent même quand la vidéo, elle, est déjà bien nommée.
         subs = [(src, cible) for src, cible in rename.sidecar_renames(f, stem) if cible != src]
         if dst.name == f.name:
             tally.named += 1
@@ -104,24 +101,19 @@ def rename_season(folder, season, args):
 # Programme principal
 # ----------------------------------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(
-        description="Renomme les episodes d'une serie au format '{numero} - {nom}.ext' (donnees TMDB).")
-    ap.add_argument("--dir", required=True,
-                    help="Racine de la serie (dossiers 'Saison N') OU un dossier de saison")
+    ap = argparse.ArgumentParser(description="Renomme les episodes d'une serie au format '{numero} - {nom}.ext' (donnees TMDB).")
+    ap.add_argument("--dir", required=True, help="Racine de la serie (dossiers 'Saison N') OU un dossier de saison")
     ap.add_argument("--tmdb-id", help="Identifiant TMDB de la serie "
                     "(par defaut : recherche sur le nom du dossier)")
     ap.add_argument("--language", default="fr-FR", help="Langue TMDB (defaut : fr-FR)")
-    ap.add_argument("--no-cache", action="store_true",
-                    help="Ignore le cache des reponses TMDB et le rafraichit")
+    ap.add_argument("--no-cache", action="store_true", help="Ignore le cache des reponses TMDB et le rafraichit")
     ap.add_argument("--apply", action="store_true", help="Renomme reellement (defaut : simulation)")
-    ap.add_argument("--match-threshold", type=float, default=0.55,
-                    help="Score minimal pour une association par titre (0-1)")
+    ap.add_argument("--match-threshold", type=float, default=0.55, help="Score minimal pour une association par titre (0-1)")
     args = ap.parse_args()
 
     cli.setup_console()
     cli.check_dir(args.dir)
-    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="rename_ep/1.0",
-                cache=cache.Cache(read=not args.no_cache))
+    tmdb = Tmdb(cli.resolve_tmdb_key(), args.language, user_agent="rename_ep/1.0", cache=cache.Cache(read=not args.no_cache))
 
     mode = cli.mode_label(args, "rien ne sera renomme ; ajoute --apply")
     print(f"=== {mode} ===   source : TMDB {args.language}")
@@ -144,7 +136,7 @@ def main():
             print()
     else:
         num = naming.season_number(Path(args.dir).name)
-        num = 1 if num is None else num      # 0 = les speciaux, a ne pas confondre
+        num = 1 if num is None else num      # 0 = les spéciaux, à ne pas confondre
         print(f"--- {Path(args.dir).name}  (TMDB saison {num}) ---")
         try:
             data = tmdb.season(args.tmdb_id, num)
@@ -152,8 +144,7 @@ def main():
             sys.exit(f"Echec de l'appel TMDB (saison {num}) : {e}")
         bilan += rename_season(Path(args.dir), data, args)
 
-    sous_titres = (f", {bilan.subtitles} sous-titre(s) "
-                   + ("renomme(s)" if args.apply else "a renommer")) if bilan.subtitles else ""
+    sous_titres = (f", {bilan.subtitles} sous-titre(s) " + ("renomme(s)" if args.apply else "a renommer")) if bilan.subtitles else ""
     print(f"TOTAL : {bilan.named}/{bilan.total} fichier(s) au bon nom{sous_titres}.")
 
 
