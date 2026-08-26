@@ -13,8 +13,7 @@ Format applique :  "Titre (Année)"
     les passages suivants n'ont plus rien à chercher, donc plus rien à se tromper.
   - N'a besoin d'AUCUN outil externe (ni MKVToolNix ni FFmpeg). Juste Internet.
 
-C'est le pendant de TV_Shows/Rename_Episodes.py, et le meilleur moyen de fiabiliser
-Metadata.py : toute la reconnaissance des films repose sur leur nom.
+C'est le pendant de TV_Shows/Rename_Episodes.py, et le meilleur moyen de fiabiliser Metadata.py : toute la reconnaissance des films repose sur leur nom.
 
 Clé TMDB : ligne TMDB_KEY=... du fichier .env, à la racine du dépôt.
 

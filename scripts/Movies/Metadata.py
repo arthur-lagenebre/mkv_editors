@@ -2,12 +2,10 @@
 r"""
 Metadata.py — Étiquette des films .mkv à partir de TMDB (données en français via l'API).
 
-Même principe que TV_Shows/Metadata.py, mais pour les films : pas de saisons/épisodes,
-et l'association se fait par RECHERCHE TMDB sur le titre + l'année extraits du nom.
+Même principe que TV_Shows/Metadata.py, mais pour les films : pas de saisons/épisodes, et l'association se fait par RECHERCHE TMDB sur le titre + l'année extraits du nom.
 
 Écrit DIRECTEMENT dans chaque .mkv (sans re-encodage ni remux) :
-  - le titre et la DATE de sortie dans les informations de segment
-    (sortie du pays de --language : fr-FR -> sortie française, pas la sortie d'origine)
+  - le titre et la DATE de sortie dans les informations de segment (sortie du pays de --language : fr-FR -> sortie française, pas la sortie d'origine)
   - le synopsis, le réalisateur, les scénaristes, le casting, les genres (tags)
   - l'IDENTIFIANT TMDB (tag "TMDB", au format Matroska "movie/1234")
   - les tags de STATISTIQUES de piste (débit, durée, nb d'images)  [--no-stats]
@@ -15,73 +13,39 @@ et l'association se fait par RECHERCHE TMDB sur le titre + l'année extraits du 
   - le nom des pistes AUDIO       -> codec + canaux + débit (ex. "E-AC-3 5.1 640 kb/s")
   - le nom des pistes SOUS-TITRES -> uniquement les drapeaux actifs (Forced, SDH...), ou "Full"
   - les DRAPEAUX 'par défaut'     -> une seule piste audio par défaut (la FR), aucun sous-titre
-  - les drapeaux FORCED et SDH    -> posés sur un sous-titre dont le NOM les annonce ("Français
-    force", "English SDH") alors que le drapeau manque - sinon, le renommer d'après ses seuls
-    drapeaux effacerait l'information. Une seule piste par langue, et rien dans une langue qui
-    declare déjà le drapeau.  [--no-flags]
+  - les drapeaux FORCED et SDH    -> posés sur un sous-titre dont le NOM les annonce ("Français force", "English SDH") alors que le drapeau manque - sinon, le renommer d'après ses seuls drapeaux effacerait l'information. Une seule piste par langue, et rien dans une langue qui declare déjà le drapeau.  [--no-flags]
 
-Un film dont une piste est AMBIGUË n'est pas traité du tout - pas même ses autres fichiers :
-un nom qui dit "force" sans drapeau transposable, ou deux pistes de même langue qui
-porteraient le même nom (deux "Full" français, que plus rien ne distingue). Rien n'est
-modifié, la raison est affichée sous [NON TRAITE], et le bilan les compte.
+Un film dont une piste est AMBIGUË n'est pas traité du tout - pas même ses autres fichiers : un nom qui dit "force" sans drapeau transposable, ou deux pistes de même langue qui porteraient le même nom (deux "Full" français, que plus rien ne distingue).
+Rien n'est modifié, la raison est affichée sous [NON TRAITE], et le bilan les compte.
 
-Deux situations que le script refuse de trancher seul, et qu'il met de côté pour poser la
-QUESTION À LA FIN du passage : plusieurs fiches écrivent le même titre autrement ("Les Quatre
-Fantastiques" et "Les 4 Fantastiques"), ou plusieurs fiches portent le MÊME titre ("Dracula"
-en rend trois, "Mortal Kombat" deux). Dans les deux cas seules comptent les fiches assez
-votées pour être crédibles : presque tout titre à un homonyme obscur quelque part, et sans ce
-filtre un cinquième de la médiathèque poserait une question.
-Dans le terminal : candidats numérotés, le plus vote en tête, Entrée le garde, i laisse le
-film de côté, q arrête les questions. Une suite ("Iron Man 2") n'est pas une variante et ne
-declenche rien. Hors terminal (sortie redirigée, CI), les films restent de côté plutôt que de
-bloquer le passage ; --no-ask rétablit l'ancien comportement, le premier résultat sans rien
-demander.
+Deux situations que le script refuse de trancher seul, et qu'il met de côté pour poser la QUESTION À LA FIN du passage : plusieurs fiches écrivent le même titre autrement ("Les Quatre Fantastiques" et "Les 4 Fantastiques"), ou plusieurs fiches portent le MÊME titre ("Dracula" en rend trois, "Mortal Kombat" deux).
+Dans les deux cas seules comptent les fiches assez votées pour être crédibles : presque tout titre à un homonyme obscur quelque part, et sans ce filtre un cinquième de la médiathèque poserait une question.
+Dans le terminal : candidats numérotés, le plus vote en tête, Entrée le garde, il laisse le film de côté, q arrête les questions. Une suite ("Iron Man 2") n'est pas une variante et ne declenche rien.
+Hors terminal (sortie redirigée, CI), les films restent de côté plutôt que de bloquer le passage ; --no-ask rétablit l'ancien comportement, le premier résultat sans rien demander.
 
-Dépendances EXTERNES (dans le PATH) : mkvpropedit + mkvmerge + mkvextract (MKVToolNix),
-ffprobe (FFmpeg).
-Aucune dépendance pip. Necessite Internet (API TMDB + jaquettes).
+Dépendances EXTERNES (dans le PATH) : mkvpropedit + mkvmerge + mkvextract (MKVToolNix), ffprobe (FFmpeg). Aucune dépendance pip. Necessite Internet (API TMDB + jaquettes).
 Le code partage avec les autres scripts du dépôt vit dans mkvlib/ (à la racine).
 
-Clé TMDB : ligne TMDB_KEY=... du fichier .env, à la racine du dépôt. C'est la seule
-source, et le même .env sert à tous les scripts : la clé n'est écrite qu'une fois.
+Clé TMDB : ligne TMDB_KEY=... du fichier .env, à la racine du dépôt. C'est la seule source, et le même .env sert à tous les scripts : la clé n'est écrite qu'une fois.
 
 Structure libre : --dir est parcouru RÉCURSIVEMENT, aussi profond qu'il y a des dossiers.
-Seuls les .mkv sont des films - un dossier ne compte ni ne se traite jamais comme un film,
-il ne fait que ranger. Un dossier qui ne contient qu'un film et rien en dessous lui prête
-son nom ("Inception (2010)/film.mkv") ; partout ailleurs c'est le nom du FICHIER qui parle,
-et le dossier IMMÉDIAT sert de renfort à la recherche : "Resident Evil/2 - Apocalypse.mkv"
-cherche "Apocalypse" (qui rend "Amour Apocalypse"...) puis "Resident Evil Apocalypse", et ne
-retient le renfort que si le titre trouvé contient à la fois le dossier et ce qu'on cherchait.
-Lui seul : au-dessus vivent les dossiers de rangement d'une médiathèque ("_Marvel", "_DC"),
-qui ne sont pas des sagas.
-Un film coupe en plusieurs fichiers (CD1/CD2) reçoit les mêmes métadonnées partout ; les
-bandes-annonces et making-of posés à côté sont reconnus À LEUR NOM et laissés de côté, comme
-les dossiers de bonus (Extras, Featurettes...). Le poids des fichiers ne decide de rien : un
-dessin anime de 1 Go est un film autant qu'un remux de 28 Go.
-Un préfixe d'ordre de saga "{n} - " est détecté et retire pour la recherche ("1 - Iron Man"
--> recherche "Iron Man"), demi-numéros compris ("1.5 - Dark Fury") ; l'ordre est inscrit comme
-numéro dans la collection (tag PART_NUMBER).
-À titre égal, TMDB classe par POPULARITÉ : une fiche portant EXACTEMENT le titre cherché passe
-donc devant ("Blade" doit rendre Blade, pas Blade II).
+Seuls les .mkv sont des films - un dossier ne compte ni ne se traite jamais comme un film, il ne fait que ranger.
+Un dossier qui ne contient qu'un film et rien en dessous lui prête son nom ("Inception (2010)/film.mkv") ; partout ailleurs c'est le nom du FICHIER qui parle, et le dossier IMMÉDIAT sert de renfort à la recherche : "Resident Evil/2 - Apocalypse.mkv" cherche "Apocalypse" (qui rend "Amour Apocalypse"...) puis "Resident Evil Apocalypse", et ne retient le renfort que si le titre trouvé contient à la fois le dossier et ce qu'on cherchait.
+Lui seul : au-dessus vivent les dossiers de rangement d'une médiathèque ("_Marvel", "_DC"), qui ne sont pas des sagas.
+Un film coupe en plusieurs fichiers (CD1/CD2) reçoit les mêmes métadonnées partout ; les bandes-annonces et making-of posés à côté sont reconnus À LEUR NOM et laissés de côté, comme les dossiers de bonus (Extras, Featurettes...).
+Le poids des fichiers ne decide de rien : un dessin anime de 1 Go est un film autant qu'un remux de 28 Go.
+Un préfixe d'ordre de saga "{n} - " est détecté et retire pour la recherche ("1 - Iron Man" -> recherche "Iron Man"), demi-numéros compris ("1.5 - Dark Fury") ; l'ordre est inscrit comme numéro dans la collection (tag PART_NUMBER).
+À titre égal, TMDB classe par POPULARITÉ : une fiche portant EXACTEMENT le titre cherché passe donc devant ("Blade" doit rendre Blade, pas Blade II).
 
-Un dossier de saga n'est pas une réunion de fichiers indépendants : c'est une COLLECTION
-TMDB, que l'API donne en entier. Les dossiers qui contiennent plusieurs films sont donc
-réexaminés DE L'INTÉRIEUR : la saga est cherchée par le NOM du dossier (le seul signal qu'un
-film mal associe ne peut pas fausser), puis parmi celles vers lesquelles plusieurs films
-pointent déjà. Les fichiers lui sont ensuite apparies un à un - le numéro d'ordre d'abord, la
-ressemblance du titre ensuite, et chaque film de la saga ne servant qu'une fois, les titres
-muets héritent de ce qui reste. Un homonyme qui existe dans 900 000 films n'existe pas dans
-une saga de 26 : "Le défi" ne peut plus ramener Batman, ni "Vendetta" ramener V pour Vendetta.
-La numérotation du dossier doit tenir dans la collection, faute de quoi un dossier de
-rangement (le MCU numéroté 35 films) se ferait passer pour une saga.  [--no-saga]
-L'identifiant TMDB retenu est INSCRIT DANS LE FILM : au passage suivant, il est relu et plus
-rien n'est cherché - l'association survit donc au renommage, et ne peut plus se tromper deux
-fois de la même façon. La relecture ne coûte un sous-processus de plus que sur les fichiers
-qui déclarent des tags : une médiathèque jamais étiquetée ne paie rien.
-Ordre de priorité : --tmdb-id, puis l'identifiant épinglé dans le NOM, puis celui lu dans le
-FICHIER, puis la recherche. Si un passage à inscrit le mauvais identifiant, corrige-le en
-épinglant le bon dans le nom - "Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - le
-passage suivant le réécrira dans le fichier.
+Un dossier de saga n'est pas une réunion de fichiers indépendants : c'est une COLLECTION TMDB, que l'API donne en entier.
+Les dossiers qui contiennent plusieurs films sont donc réexaminés DE L'INTÉRIEUR : la saga est cherchée par le NOM du dossier (le seul signal qu'un film mal associe ne peut pas fausser), puis parmi celles vers lesquelles plusieurs films pointent déjà.
+Les fichiers lui sont ensuite apparies un à un - le numéro d'ordre d'abord, la ressemblance du titre ensuite, et chaque film de la saga ne servant qu'une fois, les titres muets héritent de ce qui reste.
+Un homonyme qui existe dans 900 000 films n'existe pas dans une saga de 26 : "Le défi" ne peut plus ramener Batman, ni "Vendetta" ramener V pour Vendetta.
+La numérotation du dossier doit tenir dans la collection, faute de quoi un dossier de rangement (le MCU numéroté 35 films) se ferait passer pour une saga.  [--no-saga]
+L'identifiant TMDB retenu est INSCRIT DANS LE FILM : au passage suivant, il est relu et plus rien n'est cherché - l'association survit donc au renommage, et ne peut plus se tromper deux fois de la même façon.
+La relecture ne coûte un sous-processus de plus que sur les fichiers qui déclarent des tags : une médiathèque jamais étiquetée ne paie rien.
+Ordre de priorité : --tmdb-id, puis l'identifiant épinglé dans le NOM, puis celui lu dans le FICHIER, puis la recherche.
+Si un passage à inscrit le mauvais identifiant, corrige-le en épinglant le bon dans le nom - "Dune (2021) [tmdbid-438631]" ou "Dune {tmdb-438631}" - le passage suivant le réécrira dans le fichier.
 
 Usage :
   python Metadata.py --dir "D:\Films"                         # simulation (n'écrit rien)
@@ -94,14 +58,10 @@ Options : --apply --verify --skip-done --artwork --récap --no-tag --no-cache --
           --no-cover --no-date --no-audio-names --no-sub-names --no-flags --no-stats
           --tmdb-id (force, si un seul film) --language (défaut fr-FR) --image-size (w780)
 
-À chaque passage, un JOURNAL est écrit à la racine de --dir : "metadata.log" donne le lien
-TMDB de chaque film trouve, et groupe en fin de fichier ceux qui n'en ont pas - non associes,
-ou laissés en attente d'une réponse.
+À chaque passage, un JOURNAL est écrit à la racine de --dir : "metadata.log" donne le lien TMDB de chaque film trouve, et groupe en fin de fichier ceux qui n'en ont pas - non associes, ou laissés en attente d'une réponse.
 
---récap genere une fiche HTML de la médiathèque à la racine de --dir : mur d'affiches
-groupe par saga, avec les films qui MANQUENT à chaque saga (TMDB en connaît la
-composition). Fichier unique, les affiches sont encodées dedans. --no-tag genere les
-annexes sans rien modifier dans les .mkv.
+--récap genere une fiche HTML de la médiathèque à la racine de --dir : mur d'affiches groupe par saga, avec les films qui MANQUENT à chaque saga (TMDB en connaît la composition).
+Fichier unique, les affiches sont encodées dedans. --no-tag genere les annexes sans rien modifier dans les .mkv.
 """
 
 import argparse

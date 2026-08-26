@@ -3,15 +3,12 @@ r"""
 Rename_Episodes.py — Renomme les épisodes d'une série avec les noms TMDB (en français).
 
 Format applique :  "{numéro} - {nom de l'épisode}.ext"
-  - Le numéro est zero-padde pour avoir le MÊME nombre de digits dans toute la saison
-    (largeur = nb de digits du plus grand numéro, minimum 2).  ex : 01, 02, ... 15
+  - Le numéro est zero-padde pour avoir le MÊME nombre de digits dans toute la saison (largeur = nb de digits du plus grand numéro, minimum 2).  ex : 01, 02, ... 15
   - N'importe quel format vidéo (mkv, mp4, avi, m4v, mov, ts...) : ne touche qu'au NOM.
-  - Les SOUS-TITRES posés à côté suivent leur vidéo (.srt, .ass, .idx/.sub...), en
-    conservant ce qui suit le nom : "S01E02.fr.forced.srt" -> "02 - Titre.fr.forced.srt".
+  - Les SOUS-TITRES posés à côté suivent leur vidéo (.srt, .ass, .idx/.sub...), en conservant ce qui suit le nom : "S01E02.fr.forced.srt" -> "02 - Titre.fr.forced.srt".
   - N'a besoin d'AUCUN outil externe (ni MKVToolNix ni FFmpeg). Juste Internet pour TMDB.
 
-L'association fichier <-> épisode se fait par le numéro présent dans le nom actuel
-(S01E05, 1x05, 05 - ..., Épisode 5...), avec repli sur une correspondance de titre.
+L'association fichier <-> épisode se fait par le numéro présent dans le nom actuel (S01E05, 1x05, 05 - ..., Épisode 5...), avec repli sur une correspondance de titre.
 
 Clé TMDB : ligne TMDB_KEY=... du fichier .env, à la racine du dépôt.
 
@@ -22,8 +19,7 @@ Usage :
   python Rename_Episodes.py --dir "D:\Séries\Ma Série" --apply          # renomme
   python Rename_Episodes.py --dir "D:\Séries\Ma Série" --tmdb-id 1234   # id force
 
-La série est identifiée par une recherche TMDB sur le nom du dossier ; --tmdb-id
-n'est utile que si la recherche se trompe ou ne trouve rien.
+La série est identifiée par une recherche TMDB sur le nom du dossier ; --tmdb-id n'est utile que si la recherche se trompe ou ne trouve rien.
 """
 
 import argparse

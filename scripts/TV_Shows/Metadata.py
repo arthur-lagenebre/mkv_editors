@@ -10,10 +10,7 @@ Metadata.py — Étiquette les .mkv d'une série à partir de TMDB (données en 
   - le nom des pistes AUDIO       -> codec + canaux + débit (ex. "E-AC-3 5.1 640 kb/s")
   - le nom des pistes SOUS-TITRES -> uniquement les drapeaux actifs (Forced, SDH...), ou "Full"
   - les DRAPEAUX 'par défaut'     -> une seule piste audio par défaut (la FR), aucun sous-titre
-  - les drapeaux FORCED et SDH    -> posés sur un sous-titre dont le NOM les annonce ("Français
-    force", "English SDH") alors que le drapeau manque - sinon, le renommer d'après ses seuls
-    drapeaux effacerait l'information. Une seule piste par langue, et rien dans une langue qui
-    declare déjà le drapeau.  [--no-flags]
+  - les drapeaux FORCED et SDH    -> posés sur un sous-titre dont le NOM les annonce ("Français force", "English SDH") alors que le drapeau manque - sinon, le renommer d'après ses seuls drapeaux effacerait l'information. Une seule piste par langue, et rien dans une langue qui declare déjà le drapeau.  [--no-flags]
 
 => Fichier 100% autonome : toutes les métadonnées voyagent avec le .mkv.
 
@@ -21,15 +18,13 @@ Dépendances EXTERNES (à avoir dans le PATH) :
   - mkvpropedit, mkvmerge et mkvextract   -> paquet MKVToolNix
   - ffprobe                   -> paquet FFmpeg  (pour le débit audio + la vérif. des durées)
 
-Aucune dépendance pip. Necessite un accès Internet (API TMDB + jaquettes).
-Le code partage avec les autres scripts du dépôt vit dans mkvlib/ (à la racine).
+Aucune dépendance pip. Necessite un accès Internet (API TMDB + jaquettes). Le code partage avec les autres scripts du dépôt vit dans mkvlib/ (à la racine).
 
 Installation des outils (Windows) :
   winget install MoritzBunkus.MKVToolNix
   winget install Gyan.FFmpeg
 
-Clé TMDB gratuite : themoviedb.org -> Paramètres -> API. À mettre dans le fichier .env
-à la racine du dépôt, sur une ligne TMDB_KEY=... : c'est la seule source.
+Clé TMDB gratuite : themoviedb.org -> Paramètres -> API. À mettre dans le fichier .env à la racine du dépôt, sur une ligne TMDB_KEY=... : c'est la seule source.
 
 Usage — pointe --dir sur la RACINE de la série (dossiers "Saison N") :
 
@@ -44,11 +39,9 @@ Usage — pointe --dir sur la RACINE de la série (dossiers "Saison N") :
   # sert qu'a corriger une recherche qui se trompe ou ne trouve rien :
   python Metadata.py --dir "...\Secret Level" --tmdb-id 261579 --apply
 
-Structure attendue : un sous-dossier "Saison N" par saison (les .mkv dedans), chaque .mkv
-préfixe par son numéro d'épisode ("01 - ...", "05 - ..."). Si --dir pointe directement sur
-un dossier de saison, seule celle-ci est traitée. Un dossier "Specials" vaut la saison 0.
-L'identifiant TMDB peut être épinglé dans le nom du dossier de la série, sous la forme
-"Ma Série [tmdbid-1396]" : plus besoin de --tmdb-id aux passages suivants.
+Structure attendue : un sous-dossier "Saison N" par saison (les .mkv dedans), chaque .mkv préfixe par son numéro d'épisode ("01 - ...", "05 - ...").
+Si --dir pointe directement sur un dossier de saison, seule celle-ci est traitée. Un dossier "Specials" vaut la saison 0.
+L'identifiant TMDB peut être épinglé dans le nom du dossier de la série, sous la forme "Ma Série [tmdbid-1396]" : plus besoin de --tmdb-id aux passages suivants.
 
 Options principales :
   --tmdb-id STR    identifiant TMDB (défaut : recherche sur le nom du dossier)
