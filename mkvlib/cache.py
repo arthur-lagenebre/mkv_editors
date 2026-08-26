@@ -1,12 +1,8 @@
-"""Cache disque des reponses TMDB.
+"""Cache disque des réponses TMDB.
 
-Repasser --verify sur une mediatheque refait chaque appel : une requete par
-film, par saison, par saga. Les fiches TMDB ne bougeant pas d'un jour a l'autre,
-les reponses sont gardees quelques jours sur le disque.
+Repasser --verify sur une médiathèque refait chaque appel : une requête par film, par saison, par saga. Les fiches TMDB ne bougeant pas d'un jour à l'autre, les réponses sont gardées quelques jours sur le disque.
 
-Le cache vit HORS de la mediatheque (LOCALAPPDATA sous Windows, ~/.cache
-ailleurs) : rien ne doit apparaitre a cote des films. La cle d'une entree ne
-contient jamais la cle d'API - seulement la langue et le chemin interroge.
+Le cache vit HORS de la médiathèque (LOCALAPPDATA sous Windows, ~/.cache ailleurs) : rien ne doit apparaitre à côté des films. La clé d'une entrée ne contient jamais la clé d'API - seulement la langue et le chemin interroge.
 """
 
 import hashlib
@@ -18,27 +14,22 @@ from pathlib import Path
 TTL = 7 * 24 * 3600        # une semaine : une fiche TMDB ne change pas plus vite
 DOSSIER = "mkv_editors"
 
-
 def default_folder():
-    """Emplacement du cache, selon le systeme."""
-    base = (os.environ.get("LOCALAPPDATA")
-            or os.environ.get("XDG_CACHE_HOME")
-            or Path.home() / ".cache")
+    """Emplacement du cache, selon le système."""
+    base = (os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
     return Path(base) / DOSSIER / "tmdb"
 
 
 class Cache:
-    """Reponses JSON gardees sur le disque, une par fichier.
+    """Réponses JSON gardées sur le disque, une par fichier.
 
-    Toute panne du cache est sans consequence : une lecture qui echoue est un
-    defaut de cache, une ecriture qui echoue est ignoree. Il ne doit jamais
-    empecher un script de tourner.
+    Toute panne du cache est sans conséquence : une lecture qui echoue est un défaut de cache, une écriture qui echoue est ignorée. Il ne doit jamais empêcher un script de tourner.
     """
 
     def __init__(self, folder=None, ttl=TTL, read=True):
         self.folder = Path(folder) if folder else default_folder()
         self.ttl = ttl
-        self.read = read            # --no-cache : on n'en lit plus, on le rafraichit
+        self.read = read            # --no-cache : on n'en lit plus, on le rafraîchit
         self._purged = False
 
     def _path(self, key):
@@ -46,7 +37,7 @@ class Cache:
         return self.folder / f"{empreinte}.json"
 
     def get(self, key):
-        """Reponse en cache, ou None (absente, perimee, illisible, ou --no-cache)."""
+        """Réponse en cache, ou None (absente, périmée, illisible, ou --no-cache)."""
         if not self.read:
             return None
         path = self._path(key)
@@ -59,7 +50,7 @@ class Cache:
         return entree.get("body") if entree.get("key") == key else None
 
     def put(self, key, body):
-        """Range une reponse. Silencieux en cas d'echec."""
+        """Range une réponse. Silencieux en cas d'échec."""
         path = self._path(key)
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
@@ -71,7 +62,7 @@ class Cache:
             pass
 
     def _purge(self):
-        """Retire les entrees perimees, une fois par execution."""
+        """Retire les entrées périmées, une fois par exécution."""
         if self._purged:
             return
         self._purged = True

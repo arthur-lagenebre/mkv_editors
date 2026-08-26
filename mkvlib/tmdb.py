@@ -1,9 +1,6 @@
 """Client de l'API TMDB v3, partage par tous les scripts.
 
-Gere les deux formes de cle (cle v3 en parametre, token v4 en Bearer), distingue
-les echecs definitifs des echecs temporaires, et reessaie ces derniers : une serie
-un peu longue represente des centaines de requetes (une par saison, plus une par
-vignette du recap), assez pour croiser un 429 ou une coupure reseau passagere.
+Gère les deux formes de clé (clé v3 en paramètre, token v4 en Bearer), distingue les échecs définitifs des échecs temporaires, et réessaie ces derniers : une série un peu longue représente des centaines de requêtes (une par saison, plus une par vignette du récap), assez pour croiser un 429 ou une coupure réseau passagère.
 """
 
 import json
@@ -23,25 +20,18 @@ def movie_url(movie_id):
     """Adresse de la fiche d'un film sur le site TMDB."""
     return f"{WEB_BASE}/movie/{movie_id}"
 
-# Ordre de preference des types de sortie TMDB :
-# theatrale > theatrale limitee > premiere > numerique > physique > TV.
+# Ordre de préférence des types de sortie TMDB : théâtrale > théâtrale limitée > première > numérique > physique > TV.
 RELEASE_TYPE_ORDER = (3, 2, 1, 4, 5, 6)
-
-MAX_RETRY_WAIT = 30        # secondes : plafond du Retry-After renvoye par TMDB
-
+MAX_RETRY_WAIT = 30        # secondes : plafond du Retry-After renvoyé par TMDB
 
 class TmdbError(Exception):
-    """Echec ponctuel : l'appelant peut sauter cet element et continuer."""
-
+    """Échec ponctuel : l'appelant peut sauter cet élément et continuer."""
 
 class TmdbAuthError(Exception):
-    """Cle refusee (401/403) : rien ne fonctionnera, autant s'arreter tout de suite.
+    """Clé refusée (401/403) : rien ne fonctionnera, autant s'arrêter tout de suite.
 
-    Volontairement hors de TmdbError : les scripts rattrapent TmdbError element
-    par element, et une cle invalide ne doit pas se transformer en une cascade de
-    "saison ignoree" sans jamais dire pourquoi.
+    Volontairement hors de TmdbError : les scripts rattrapent TmdbError élément par élément, et une clé invalide ne doit pas se transformer en une cascade de "saison ignorée" sans jamais dire pourquoi.
     """
-
 
 def release_region(language):
     """'fr-FR' -> 'FR'. None si la langue ne precise aucun pays."""
@@ -50,8 +40,7 @@ def release_region(language):
 
 
 class Tmdb:
-    def __init__(self, key, language="fr-FR", user_agent="mkv_editors/1.0",
-                 timeout=30, attempts=3, cache=None):
+    def __init__(self, key, language="fr-FR", user_agent="mkv_editors/1.0", timeout=30, attempts=3, cache=None):
         self.key = key
         self.language = language
         self.user_agent = user_agent
@@ -62,41 +51,38 @@ class Tmdb:
     # ------------------------------------------------------------------ HTTP
     @staticmethod
     def _retry_after(headers):
-        """Delai demande par TMDB dans l'en-tete Retry-After, si exploitable."""
+        """Délai demande par TMDB dans l'en-tête Retry-After, si exploitable."""
         value = (headers or {}).get("Retry-After")
         if value and str(value).strip().isdigit():
             return min(int(value), MAX_RETRY_WAIT)
         return None
 
     def _request(self, url, headers):
-        """GET brut avec reessais. Retourne (octets, en-tetes)."""
+        """GET brut avec réessais. Retourne (octets, en-têtes)."""
         for attempt in range(1, self.attempts + 1):
             wait = None
             try:
                 with urlopen(Request(url, headers=headers), timeout=self.timeout) as r:
                     return r.read(), r.headers
-            except HTTPError as e:            # sous-classe d'URLError : a rattraper avant
+            except HTTPError as e:            # sous-classe d'URLError : à rattraper avant
                 if e.code in (401, 403):
-                    raise TmdbAuthError(
-                        f"cle TMDB refusee par l'API (HTTP {e.code}). "
-                        "Verifie la ligne TMDB_KEY=... de ton fichier .env.") from e
+                    raise TmdbAuthError(f"cle TMDB refusee par l'API (HTTP {e.code}). Verifie la ligne TMDB_KEY=... de ton fichier .env.") from e
                 if e.code == 404:
                     raise TmdbError("introuvable sur TMDB (HTTP 404)") from e
                 if e.code != 429 and e.code < 500:
                     raise TmdbError(f"HTTP {e.code} {e.reason}") from e
                 failure, wait = e, self._retry_after(e.headers)   # 429 / panne serveur
-            except (URLError, OSError) as e:                      # reseau, DNS, timeout
+            except (URLError, OSError) as e:                      # réseau, DNS, timeout
                 failure = e
             if attempt == self.attempts:
                 raise TmdbError(str(failure)) from failure
-            # Attente exponentielle + bruit : les vignettes du recap partent a 8 threads,
-            # sans bruit elles reviendraient toutes taper au meme instant.
+            # Attente exponentielle + bruit : les vignettes du récap partent à 8 threads, sans bruit elles reviendraient toutes taper au même instant.
             time.sleep(wait if wait is not None else 2 ** (attempt - 1) + random.uniform(0, 0.5))
 
     def get(self, endpoint, language=None):
         """GET sur un endpoint de l'API, decode en JSON. Passe par le cache s'il y en a un."""
         langue = language or self.language
-        # La cle de cache ne retient que la langue et le chemin : jamais la cle d'API.
+        # La clé de cache ne retient que la langue et le chemin : jamais la clé d'API.
         cle = f"{langue}:{endpoint}"
         if self.cache is not None:
             garde = self.cache.get(cle)
@@ -109,7 +95,7 @@ class Tmdb:
         if self.key.startswith("ey") and self.key.count(".") == 2:   # token de lecture v4
             headers["Authorization"] = f"Bearer {self.key}"
             url += f"{sep}language={langue}"
-        else:                                                        # cle API v3
+        else:                                                        # clé API v3
             url += f"{sep}api_key={self.key}&language={langue}"
         body, _ = self._request(url, headers)
         try:
@@ -132,37 +118,30 @@ class Tmdb:
         return self.get(f"search/collection?query={quote(name)}").get("results", [])
 
     def movie(self, movie_id, language=None):
-        """Details du film + credits (realisateur, scenaristes, casting)."""
+        """Détails du film + crédits (réalisateur, scénaristes, casting)."""
         return self.get(f"movie/{movie_id}?append_to_response=credits", language)
 
     def local_release_date(self, movie_id, region):
         """Date de sortie du film dans `region` (ex. 'FR'), via /release_dates.
 
-        Le champ `release_date` des details renvoie TOUJOURS la sortie d'origine
-        (souvent americaine), meme interroge en fr-FR : il faut cet endpoint pour
-        obtenir la sortie nationale. On retient le type le plus pertinent (voir
-        RELEASE_TYPE_ORDER) et, a type egal, la date la plus ancienne — sinon une
-        ressortie en salles prendrait le pas sur la sortie initiale.
-        Retourne None si le pays est absent ou en cas d'echec reseau.
+        Le champ `release_date` des détails renvoie TOUJOURS la sortie d'origine (souvent américaine), même interroge en fr-FR : il faut cet endpoint pour obtenir la sortie nationale. On retient le type le plus pertinent (voir RELEASE_TYPE_ORDER) et, à type égal, la date la plus ancienne — sinon une ressortie en salles prendrait le pas sur la sortie initiale. Retourne None si le pays est absent ou en cas d'échec réseau.
         """
         try:
             results = self.get(f"movie/{movie_id}/release_dates").get("results", [])
         except TmdbError:
             return None
-        dates = next((r.get("release_dates", []) for r in results
-                      if r.get("iso_3166_1") == region), [])
+        dates = next((r.get("release_dates", []) for r in results if r.get("iso_3166_1") == region), [])
         for wanted in RELEASE_TYPE_ORDER:
-            same = sorted(d["release_date"][:10] for d in dates
-                          if d.get("type") == wanted and d.get("release_date"))
+            same = sorted(d["release_date"][:10] for d in dates if d.get("type") == wanted and d.get("release_date"))
             if same:
                 return same[0]
         return None
 
     def collection(self, collection_id, language=None):
-        """Composition d'une saga : tous ses films, meme ceux qu'on ne possede pas."""
+        """Composition d'une saga : tous ses films, même ceux qu'on ne possède pas."""
         return self.get(f"collection/{collection_id}", language)
 
-    # ---------------------------------------------------------------- Series
+    # ---------------------------------------------------------------- Séries
     def search_tv(self, name, year=None):
         endpoint = f"search/tv?query={quote(name)}"
         if year:
@@ -170,28 +149,25 @@ class Tmdb:
         return self.get(endpoint).get("results", [])
 
     def series(self, show_id, language=None):
-        """Details de la serie (nom, synopsis, poster, date de premiere diffusion...)."""
+        """Détails de la série (nom, synopsis, poster, date de première diffusion...)."""
         return self.get(f"tv/{show_id}", language)
 
     def season(self, show_id, season_number, language=None):
-        """Donnees d'une saison, MEME structure qu'un export JSON TMDB."""
+        """Données d'une saison, MÊME structure qu'un export JSON TMDB."""
         return self.get(f"tv/{show_id}/season/{season_number}", language)
 
     # ---------------------------------------------------------------- Images
     def image(self, image_path, size):
-        """Telecharge une image TMDB et retourne ses octets.
+        """Télécharge une image TMDB et retourne ses octets.
 
-        Compare la taille recue a l'en-tete Content-Length : un flux coupe en
-        cours de route leve une erreur au lieu de produire silencieusement un
-        JPEG tronque — embarque tel quel dans le .mkv, il y resterait.
+        Compare la taille reçue à l'en-tête Content-Length : un flux coupé en cours de route leve une erreur au lieu de produire silencieusement un JPEG tronque — embarque tel quel dans le .mkv, il y resterait.
         """
-        body, headers = self._request(f"{IMG_BASE}{size}{image_path}",
-                                      {"User-Agent": self.user_agent})
+        body, headers = self._request(f"{IMG_BASE}{size}{image_path}", {"User-Agent": self.user_agent})
         announced = headers.get("Content-Length")
         if announced and str(announced).isdigit() and len(body) != int(announced):
             raise TmdbError(f"telechargement incomplet ({len(body)}/{announced} octets)")
         return body
 
     def save_image(self, image_path, size, dest):
-        """Ecrit une image TMDB sur le disque (jaquette embarquee, folder.jpg)."""
+        """Écrit une image TMDB sur le disque (jaquette embarquee, folder.jpg)."""
         Path(dest).write_bytes(self.image(image_path, size))

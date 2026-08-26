@@ -1,9 +1,6 @@
 """Renommer des fichiers et des dossiers sans rien perdre en route.
 
-Trois pieges que le renommage naif ignore : sous Windows, changer seulement la
-casse d'un nom est refuse ; un fichier peut viser le nom qu'un autre porte
-encore (numerotation decalee d'un cran) ; et les sous-titres poses a cote d'une
-video doivent la suivre, sinon le lecteur ne les associe plus.
+Trois pièges que le renommage naïf ignore : sous Windows, changer seulement la casse d'un nom est refusé ; un fichier peut viser le nom qu'un autre porte encore (numérotation décalée d'un cran) ; et les sous-titres posés à côté d'une vidéo doivent la suivre, sinon le lecteur ne les associe plus.
 """
 
 import os
@@ -11,9 +8,8 @@ from dataclasses import dataclass
 
 from . import naming
 
-
 def free_name(path):
-    """Nom temporaire libre a cote de `path`, pour un renommage en deux temps."""
+    """Nom temporaire libre à côté de `path`, pour un renommage en deux temps."""
     for i in range(1, 1000):
         candidate = path.with_name(f"{path.stem}.tmp{i}{path.suffix}")
         if not candidate.exists():
@@ -22,7 +18,7 @@ def free_name(path):
 
 
 def same_file(a, b):
-    """Vrai si les deux chemins designent le meme fichier (casse differente incluse)."""
+    """Vrai si les deux chemins désignent le même fichier (casse différente incluse)."""
     try:
         return b.exists() and a.samefile(b)
     except OSError:
@@ -32,8 +28,7 @@ def same_file(a, b):
 def rename_path(src, dst):
     """Renomme src en dst, y compris quand seule la CASSE change.
 
-    Windows considere "titre.mkv" et "Titre.mkv" comme le meme fichier : le
-    renommage direct est refuse, il faut passer par un nom intermediaire.
+    Windows considère "titre.mkv" et "Titre.mkv" comme le même fichier : le renommage direct est refusé, il faut passer par un nom intermédiaire.
     """
     if same_file(src, dst):
         tmp = free_name(src)
@@ -44,12 +39,9 @@ def rename_path(src, dst):
 
 
 def apply_renames(planned):
-    """Applique les renommages prevus. Retourne l'ensemble des sources traitees.
+    """Applique les renommages prévus. Retourne l'ensemble des sources traitées.
 
-    Un fichier peut viser le nom qu'un autre porte encore (numerotation decalee
-    d'un cran) : on repasse alors sur les cas bloques une fois les autres liberes,
-    et on casse les cycles restants (01 <-> 02) par un nom temporaire. Chaque
-    entree garde son chemin d'origine, seul repere stable a travers ces detours.
+    Un fichier peut viser le nom qu'un autre porte encore (numérotation décalée d'un cran) : on repasse alors sur les cas bloqués une fois les autres libérés, et on casse les cycles restants (01 <-> 02) par un nom temporaire. Chaque entrée garde son chemin d'origine, seul repère stable à travers ces détours.
     """
     done = set()
     pending = [(src, src, dst) for src, dst in planned]   # (origine, source actuelle, cible)
@@ -68,12 +60,12 @@ def apply_renames(planned):
             progress = True
         if not blocked:
             break
-        if progress:                      # des noms se sont liberes : on retente
+        if progress:                      # des noms se sont libérés : on retente
             pending = blocked
             continue
         occupees = {os.path.normcase(str(s)) for _, s, _ in blocked}
         bloque = next((t for t in blocked if os.path.normcase(str(t[2])) in occupees), None)
-        if bloque is None:                # vrais conflits : des fichiers etrangers
+        if bloque is None:                # vrais conflits : des fichiers étrangers
             for _, _, dst in blocked:
                 print(f"  [IGNORE] existe deja : {dst.name}")
             break
@@ -94,21 +86,18 @@ def apply_renames(planned):
 @dataclass
 class Tally:
     """Compte-rendu d'un lot de renommages. Additionnable pour totaliser."""
-    named: int = 0          # videos deja au bon nom ou renommees
-    total: int = 0          # videos vues
-    subtitles: int = 0      # sous-titres renommes avec leur video
+    named: int = 0          # vidéos déjà au bon nom ou renommées
+    total: int = 0          # vidéos vues
+    subtitles: int = 0      # sous-titres renommés avec leur vidéo
 
     def __add__(self, other):
-        return Tally(self.named + other.named, self.total + other.total,
-                     self.subtitles + other.subtitles)
+        return Tally(self.named + other.named, self.total + other.total, self.subtitles + other.subtitles)
 
 
 def sidecar_renames(video, new_stem):
-    """[(source, destination), ...] pour les sous-titres poses a cote d'une video.
+    """[(source, destination), ...] pour les sous-titres posés à côté d'une vidéo.
 
-    Un sous-titre suit sa video s'il porte le meme nom : ce qui vient apres est
-    conserve tel quel, pour ne pas perdre la langue ni les drapeaux
-    ('S01E02.fr.forced.srt' -> '01 - Titre.fr.forced.srt').
+    Un sous-titre suit sa vidéo s'il porte le même nom : ce qui vient après est conservé tel quel, pour ne pas perdre la langue ni les drapeaux ('S01E02.fr.forced.srt' -> '01 - Titre.fr.forced.srt').
     """
     renames = []
     prefixe = video.stem.lower() + "."

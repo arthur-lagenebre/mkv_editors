@@ -1,4 +1,4 @@
-"""Cache disque des reponses TMDB."""
+"""Cache disque des réponses TMDB."""
 
 import json
 import os
@@ -22,7 +22,7 @@ class CacheTestCase(unittest.TestCase):
         return cache.Cache(self.dossier, **kwargs)
 
     def vieillir(self, secondes):
-        """Recule la date de toutes les entrees, pour simuler le temps qui passe."""
+        """Recule la date de toutes les entrées, pour simuler le temps qui passe."""
         for f in self.dossier.glob("*.json"):
             ancien = time.time() - secondes
             os.utime(f, (ancien, ancien))
@@ -57,7 +57,7 @@ class TestCache(CacheTestCase):
         self.assertIsNone(c.get("k"))
 
     def test_cle_differente_dans_le_fichier(self):
-        # Garde-fou : le contenu porte sa cle, une collision d'empreinte ne sert rien.
+        # Garde-fou : le contenu porte sa clé, une collision d'empreinte ne sert rien.
         c = self.cache()
         c.put("k", {"a": 1})
         for f in self.dossier.glob("*.json"):
@@ -70,20 +70,18 @@ class TestCache(CacheTestCase):
         froid = self.cache(read=False)
         self.assertIsNone(froid.get("k"))          # on ne lit plus
         froid.put("k", {"a": 2})
-        self.assertEqual(chaud.get("k"), {"a": 2})  # mais on a bien rafraichi
+        self.assertEqual(chaud.get("k"), {"a": 2})  # mais on a bien rafraîchi
 
     def test_purge_des_entrees_perimees(self):
         c = self.cache(ttl=100)
         c.put("vieux", {"a": 1})
         self.vieillir(200)
-        c._purged = False                          # une purge par execution
+        c._purged = False                          # une purge par exécution
         c.put("neuf", {"a": 2})
         self.assertEqual(len(list(self.dossier.glob("*.json"))), 1)
 
     def test_ecriture_impossible_sans_consequence(self):
-        # Un fichier a la place du dossier parent : la creation echouera, sur
-        # n'importe quel systeme. ("Z:/inexistant" n'etait absolu que sous Windows -
-        # ailleurs, c'etait un chemin relatif que le test creait sans probleme.)
+        # Un fichier à la place du dossier parent : la création échouera, sur n'importe quel système. ("Z:/inexistant" n'était absolu que sous Windows - ailleurs, c'était un chemin relatif que le test créait sans problème.)
         bloqueur = Path(self._tmp.name) / "bloqueur"
         bloqueur.write_text("je ne suis pas un dossier", encoding="utf-8")
         c = cache.Cache(bloqueur / "tmdb")
@@ -98,7 +96,7 @@ class TestCache(CacheTestCase):
 
 class TestEmplacement(unittest.TestCase):
     def test_hors_de_la_mediatheque(self):
-        # Rien ne doit apparaitre a cote des films.
+        # Rien ne doit apparaitre à côté des films.
         dossier = cache.default_folder()
         self.assertEqual(dossier.name, "tmdb")
         self.assertEqual(dossier.parent.name, "mkv_editors")

@@ -1,8 +1,6 @@
-"""Association d'un nom de dossier a une fiche TMDB.
+"""Association d'un nom de dossier à une fiche TMDB.
 
-Films et series posent la meme question - "de quoi parle ce dossier ?" - et
-meritent la meme reponse : le premier resultat, mais avec les doutes affiches
-plutot qu'avales.
+Films et séries posent la même question - "de quoi parle ce dossier ?" - et méritent la même réponse : le premier résultat, mais avec les doutes affichés plutôt qu'avalés.
 """
 
 import re
@@ -13,7 +11,7 @@ from pathlib import Path
 from . import naming
 from .tmdb import TmdbError
 
-# Un titre trouve moins ressemblant que ca a la recherche merite d'etre verifie.
+# Un titre trouve moins ressemblant que ça a la recherche mérite d'être vérifié.
 MIN_SIMILARITE = 0.6
 
 
@@ -22,13 +20,13 @@ def _norm(s):
 
 
 def describe(item, key="title", date_key="release_date"):
-    """'Inception (2010) [id 27205]' — comment on montre un resultat TMDB."""
+    """'Inception (2010) [id 27205]' — comment on montre un résultat TMDB."""
     return (f"{item.get(key)} ({(item.get(date_key) or '?')[:4]}) "
             f"[id {item.get('id')}]")
 
 
 def _ratio(query, title):
-    """Ressemblance entre ce qu'on a cherche et ce que TMDB a rendu."""
+    """Ressemblance entre ce qu'on a cherché et ce que TMDB a rendu."""
     return SequenceMatcher(None, _norm(query), _norm(title)).ratio()
 
 
@@ -37,27 +35,21 @@ def _mots(s):
 
 
 def contient(texte, fragment):
-    """`texte` reprend-il tous les mots de `fragment`, a la suite ?
+    """`texte` reprend-il tous les mots de `fragment`, à la suite ?
 
-    Comparer des sous-chaines ne marche pas a cette echelle : un dossier nomme
-    "A" se retrouverait dans "Autre", et "V" dans "Vendetta". Ce sont les MOTS
-    qui doivent correspondre.
+    Comparer des sous-chaînes ne marche pas à cette échelle : un dossier nomme "À" se retrouverait dans "Autre", et "V" dans "Vendetta". Ce sont les MOTS qui doivent correspondre.
     """
     mots, cherches = _mots(texte), _mots(fragment)
     n = len(cherches)
     return n > 0 and any(mots[i:i + n] == cherches for i in range(len(mots) - n + 1))
 
 
-# Une fiche obscure qui porte pile le bon titre reste une fiche obscure. Sans ce
-# garde-fou, "The Fast and the Furious" (1954, 41 votes) prend la place de celui
-# de 2001 (11 029 votes), et "Alien vs Predator" (2022, 2 votes) celle de 2004.
-# Le nombre de votes TMDB est le seul signal de notoriete dont on dispose.
+# Une fiche obscure qui porte pile le bon titre reste une fiche obscure. Sans ce garde-fou, "The Fast and the Furious" (1954, 41 votes) prend la place de celui de 2001 (11 029 votes), et "Alien vs Predator" (2022, 2 votes) celle de 2004. Le nombre de votes TMDB est le seul signal de notoriété dont on dispose.
 #
-# Mesure sur les deux mediatheques : les fiches a garder pesent de 20% a 270% de
-# la tete de liste, celles a rejeter moins de 1%. Le seuil tient dans ce fosse.
+# Mesure sur les deux médiathèques : les fiches à garder pèsent de 20% à 270% de la tête de liste, celles à rejeter moins de 1%. Le seuil tient dans ce fosse.
 MIN_VOTES = 50
 PART_TITRE_EXACT = 10     # un titre exact est une preuve faible : il faut du poids
-PART_SAGA = 20            # un titre qui porte saga ET sous-titre prouve deja plus
+PART_SAGA = 20            # un titre qui porte saga ET sous-titre prouve déjà plus
 
 
 def _votes(item):
@@ -65,38 +57,33 @@ def _votes(item):
 
 
 def credible(candidat, reference, part=PART_TITRE_EXACT):
-    """Le candidat pese-t-il assez face a la fiche que TMDB classe en premier ?"""
+    """Le candidat pèse-t-il assez face à la fiche que TMDB classe en premier ?"""
     return _votes(candidat) >= max(MIN_VOTES, _votes(reference) / part)
 
 
 def _search(tmdb, title, year):
-    """Recherche TMDB sur un titre : avec l'annee, puis sans si elle ne donne rien."""
+    """Recherche TMDB sur un titre : avec l'année, puis sans si elle ne donne rien."""
     results = tmdb.search_movie(title, year)
     if not results and year:
         results = tmdb.search_movie(title, None)
     return results
 
 
-# Le dossier immediat, et lui seul : au-dessus vivent les dossiers de rangement
-# d'une mediatheque ("_Marvel", "_DC"), qui ne sont pas des sagas et produisent
-# des recherches absurdes ("_Marvel Spider-Man 2").
+# Le dossier immédiat, et lui seul : au-dessus vivent les dossiers de rangement d'une médiathèque ("_Marvel", "_DC"), qui ne sont pas des sagas et produisent des recherches absurdes ("_Marvel Spider-Man 2").
 MAX_CONTEXTS = 1
 
 
 def usable_contexts(contexts, title, results, key="title"):
-    """Dossiers qui peuvent encore apprendre quelque chose a la recherche.
+    """Dossiers qui peuvent encore apprendre quelque chose à la recherche.
 
-    Un dossier deja present dans le titre cherche n'apporte rien ("X-Men/01 -
-    X-Men" chercherait "X-Men X-Men"). Et si le film trouve porte deja le nom de
-    la saga, la recherche a compris toute seule : inutile d'insister.
+    Un dossier déjà présent dans le titre cherché n'apporte rien ("X-Men/01 - X-Men" chercherait "X-Men X-Men"). Et si le film trouvé porte déjà le nom de la saga, la recherche a compris toute seule : inutile d'insister.
     """
     if isinstance(contexts, str):
         contexts = [contexts] if contexts else []
     trouve = results[0].get(key) if results else ""
     utiles = []
     for context in contexts:
-        # Le dossier repete le titre ("X-Men/01 - X-Men"), ou le contient
-        # ("Les chroniques de Riddick/3 - Riddick") : il n'apprend rien.
+        # Le dossier répète le titre ("X-Men/01 - X-Men"), ou le contient ("Les chroniques de Riddick/3 - Riddick") : il n'apprend rien.
         if not context or contient(title, context) or contient(context, title):
             continue
         if trouve and contient(trouve, context):
@@ -106,25 +93,14 @@ def usable_contexts(contexts, title, results, key="title"):
 
 
 def search_with_context(tmdb, title, year, contexts=(), key="title"):
-    """(resultats, requete retenue) : le titre seul, les dossiers parents en renfort.
+    """(résultats, requête retenue) : le titre seul, les dossiers parents en renfort.
 
-    Le nom d'un fichier de saga n'est souvent que le sous-titre du film, et ce
-    sous-titre appartient a un autre film ailleurs sur TMDB : "Apocalypse" rend
-    "Amour Apocalypse", "Vendetta" rend "V pour Vendetta". Le dossier, lui, sait
-    de quelle saga il s'agit.
+    Le nom d'un fichier de saga n'est souvent que le sous-titre du film, et ce sous-titre appartient à un autre film ailleurs sur TMDB : "Apocalypse" rend "Amour Apocalypse", "Vendetta" rend "V pour Vendetta". Le dossier, lui, sait de quelle saga il s'agit.
 
-    Le renfort ne l'emporte qu'a deux conditions, faute de quoi il ferait pire :
-      - le titre trouve contient A LA FOIS le dossier et ce qu'on cherchait,
-        signe qu'on est tombe sur le bon film de la bonne saga ;
-      - ou bien le titre seul ne ressemblait a rien et le renfort fait mieux.
-    Un nom de saga que TMDB ignore ("DCEU Man of Steel") ne rend rien et laisse
-    donc le resultat nu en place.
+    Le renfort ne l'emporte qu'a deux conditions, faute de quoi il ferait pire : - le titre trouvé contient À LA FOIS le dossier et ce qu'on cherchait, signe qu'on est tombé sur le bon film de la bonne saga ; - ou bien le titre seul ne ressemblait à rien et le renfort fait mieux. Un nom de saga que TMDB ignore ("DCEU Man of Steel") ne rend rien et laisse donc le résultat nu en place.
     """
     results = _search(tmdb, title, year)
-    # Une annee ecrite dans le nom et confirmee par la fiche trouvee : la
-    # question est deja tranchee, et le dossier n'a rien a y ajouter. Sans ca,
-    # "_DC/Catwoman (2004)" cherchait "_DC Catwoman" et rapportait un court
-    # metrage "DC Showcase: Catwoman".
+    # Une année écrite dans le nom et confirmée par la fiche trouvée : la question est déjà tranchée, et le dossier n'a rien à y ajouter. Sans ça, "_DC/Catwoman (2004)" cherchait "_DC Catwoman" et rapportait un court métrage "DC Showcase: Catwoman".
     if year and results and (results[0].get("release_date") or "")[:4] == str(year):
         return results, title
     score = _ratio(title, results[0].get(key)) if results else 0.0
@@ -136,36 +112,27 @@ def search_with_context(tmdb, title, year, contexts=(), key="title"):
         trouve = renfort[0].get(key) or ""
         saga = contient(trouve, context) and contient(trouve, title)
         mieux = score < MIN_SIMILARITE and _ratio(renfort_q, trouve) > score
-        # Sans le controle de notoriete, "Les chroniques de Riddick/1 - Pitch
-        # Black" troquerait Pitch Black (4 914 votes) contre un court metrage
-        # d'animation de la saga (99 votes) qui, lui, porte les deux noms.
-        if (saga or mieux) and (not results
-                                or credible(renfort[0], results[0], PART_SAGA)):
+        # Sans le contrôle de notoriété, "Les chroniques de Riddick/1 - Pitch Black" troquerait Pitch Black (4 914 votes) contre un court métrage d'animation de la saga (99 votes) qui, lui, porte les deux noms.
+        if (saga or mieux) and (not results or credible(renfort[0], results[0], PART_SAGA)):
             return renfort, renfort_q
     return results, title
 
 
 def pick_result(results, query, key="title", date_key="release_date"):
-    """(resultat, remarques). La fiche retenue, avec les doutes rendus visibles.
+    """(résultat, remarques). La fiche retenue, avec les doutes rendus visibles.
 
-    TMDB classe par POPULARITE, pas par pertinence : chercher "Blade" rend "Blade
-    II", "Predator" rend "Predator: Badlands", "Avengers" rend un film de 2026.
-    Une fiche qui porte EXACTEMENT le titre cherche passe donc devant - c'est le
-    seul signal dont on dispose qui ne depend pas de la mode du moment.
+    TMDB classe par POPULARITÉ, pas par pertinence : chercher "Blade" rend "Blade II", "Predator" rend "Predator: Badlands", "Avengers" rend un film de 2026. Une fiche qui porte EXACTEMENT le titre cherché passe donc devant - c'est le seul signal dont on dispose qui ne dépend pas de la mode du moment.
 
-    Encore faut-il que cette fiche existe vraiment : un titre exact porte par un
-    inconnu ne vaut pas mieux qu'un classement, d'ou le controle de notoriete.
+    Encore faut-il que cette fiche existe vraiment : un titre exact porte par un inconnu ne vaut pas mieux qu'un classement, d'où le contrôle de notoriété.
 
-    Restent les doutes qu'on ne peut pas lever : deux fiches du meme titre
-    (remake, reboot), ou un titre trouve qui n'a plus grand-chose a voir.
+    Restent les doutes qu'on ne peut pas lever : deux fiches du même titre (remake, reboot), ou un titre trouvé qui n'a plus grand-chose à voir.
     """
     best = results[0]
     exact = next((m for m in results if _norm(m.get(key)) == _norm(query)), None)
     if exact is not None and credible(exact, best):
         best = exact
     notes = []
-    jumeau = next((m for m in results
-                   if m is not best and _norm(m.get(key)) == _norm(best.get(key))), None)
+    jumeau = next((m for m in results if m is not best and _norm(m.get(key)) == _norm(best.get(key))), None)
     if jumeau is not None:
         notes.append(f"titre partage avec {describe(jumeau, key, date_key)} "
                      "-> verifie l'annee, ou force --tmdb-id")
@@ -174,20 +141,15 @@ def pick_result(results, query, key="title", date_key="release_date"):
     return best, notes
 
 
-# Deux fiches qui ecrivent le meme titre autrement ne se departagent pas toutes
-# seules : "Les 4 Fantastiques" et "Les Quatre Fantastiques" sont le meme titre,
-# et TMDB en propose trois. Une SUITE, elle, rallonge le titre ("Iron Man 2") :
-# c'est ce qui separe une vraie hesitation d'une simple saga.
+# Deux fiches qui écrivent le même titre autrement ne se départagent pas toutes seules : "Les 4 Fantastiques" et "Les Quatre Fantastiques" sont le même titre, et TMDB en propose trois. Une SUITE, elle, rallonge le titre ("Iron Man 2") : c'est ce qui sépare une vraie hésitation d'une simple saga.
 VARIANTE_MIN = 0.75
-VARIANTE_MAX = 6          # au-dela, ce ne sont plus des concurrents credibles
+VARIANTE_MAX = 6          # au-delà, ce ne sont plus des concurrents crédibles
 
 
 def rival_versions(query, results, key="title"):
-    """Fiches qui ecrivent le meme titre que la recherche, mais autrement.
+    """Fiches qui écrivent le même titre que la recherche, mais autrement.
 
-    Meme nombre de mots et forte ressemblance, sans etre un prolongement de la
-    recherche. Mesure faite sur 101 films : 6 hesitations levees, dont un
-    making-of pris pour son film.
+    Même nombre de mots et forte ressemblance, sans être un prolongement de la recherche. Mesure faite sur 101 films : 6 hésitations levées, dont un making-of pris pour son film.
     """
     rivaux = []
     for item in results[1:VARIANTE_MAX]:
@@ -203,33 +165,27 @@ def rival_versions(query, results, key="title"):
 class Doubt:
     """Une association que le script refuse de trancher seul.
 
-    Le film n'est volontairement pas charge : c'est la reponse donnee a la fin
-    du passage qui dira quelle fiche aller chercher.
+    Le film n'est volontairement pas charge : c'est la réponse donnée à la fin du passage qui dira quelle fiche aller chercher.
     """
     query: str
     candidates: list = field(default_factory=list)   # la retenue d'abord
-    notes: list = field(default_factory=list)        # ce qui a mis la puce a l'oreille
+    notes: list = field(default_factory=list)        # ce qui a mis la puce à l'oreille
     order: object = None                             # ordre de saga (1, ou "1.5")
 
 
 def twin_versions(results, best, key="title"):
-    """Fiches qui portent EXACTEMENT le meme titre que celle retenue.
+    """Fiches qui portent EXACTEMENT le même titre que celle retenue.
 
-    Remake, reboot, homonyme : "Dracula" en rend trois, "Mortal Kombat" deux, et
-    rien dans le nom du fichier ne les departage - c'est une question, pas une
-    deduction. Seules comptent celles qui pesent assez : sans ce filtre, un cinquieme
-    de la mediatheque poserait une question a cause d'un court metrage a trois votes.
+    Remake, reboot, homonyme : "Dracula" en rend trois, "Mortal Kombat" deux, et rien dans le nom du fichier ne les départage - c'est une question, pas une deduction. Seules comptent celles qui pèsent assez : sans ce filtre, un cinquième de la médiathèque poserait une question à cause d'un court métrage à trois votes.
     """
-    jumeaux = [m for m in results
-               if m is not best and _norm(m.get(key)) == _norm(best.get(key))]
+    jumeaux = [m for m in results if m is not best and _norm(m.get(key)) == _norm(best.get(key))]
     return [m for m in jumeaux if credible(m, best)]
 
 
 def choice_list(results, best, doubts, limit=VARIANTE_MAX):
-    """Candidats a proposer : les fiches en concurrence, puis le reste.
+    """Candidats à proposer : les fiches en concurrence, puis le reste.
 
-    La plus votee passe en tete pour que la reponse par defaut - une simple
-    Entree - soit la plus vraisemblable des deux.
+    La plus votée passe en tête pour que la réponse par défaut - une simple Entrée - soit la plus vraisemblable des deux.
     """
     tete = sorted([best] + list(doubts), key=_votes, reverse=True)
     ordonnes = list(tete)
@@ -242,12 +198,9 @@ def choice_list(results, best, doubts, limit=VARIANTE_MAX):
 def find_movie(tmdb, rawname, contexts=()):
     """(fiche TMDB, ordre de saga) pour un nom de dossier ou de fichier.
 
-    Meme priorite que pour les series : identifiant epingle dans le nom d'abord,
-    recherche sur le titre et l'annee ensuite. Affiche ce qui a ete retenu et les
-    doutes. Rend (None, ordre) si rien ne correspond.
+    Même priorité que pour les séries : identifiant épinglé dans le nom d'abord, recherche sur le titre et l'année ensuite. Affiche ce qui a été retenu et les doutes. Rend (None, ordre) si rien ne correspond.
 
-    C'est un resultat de RECHERCHE, sans les credits ni les genres : de quoi
-    nommer un dossier. Qui veut les details fait ensuite tmdb.movie(id).
+    C'est un résultat de RECHERCHE, sans les crédits ni les genres : de quoi nommer un dossier. Qui veut les détails fait ensuite tmdb.movie(id).
     """
     pinned, nom = naming.extract_tmdb_id(rawname)
     title, year, order = naming.parse_title_year(nom)
@@ -266,24 +219,20 @@ def find_movie(tmdb, rawname, contexts=()):
         print(f"  echec recherche TMDB : {e}")
         return None, order
     if not results:
-        print(f"  [NON ASSOCIE] recherche '{title}'"
-              + (f" ({year})" if year else "") + " -> aucun resultat")
+        print(f"  [NON ASSOCIE] recherche '{title}'" + (f" ({year})" if year else "") + " -> aucun resultat")
         return None, order
 
     best, notes = pick_result(results, query)
-    print(f"  recherche : '{query}'" + (f" ({year})" if year else "")
-          + (f" [ordre {order}]" if order else "")
-          + f" -> {describe(best)}")
+    print(f"  recherche : '{query}'" + (f" ({year})" if year else "") + (f" [ordre {order}]" if order else "") + f" -> {describe(best)}")
     for note in notes:
         print(f"  /!\\ {note}")
     return best, order
 
 
 def series_query(directory):
-    """(titre, annee) a chercher sur TMDB pour un dossier de serie.
+    """(titre, année) à chercher sur TMDB pour un dossier de série.
 
-    Si --dir pointe sur un dossier de saison, c'est le dossier parent qui porte
-    le nom de la serie.
+    Si --dir pointe sur un dossier de saison, c'est le dossier parent qui porte le nom de la série.
     """
     path = Path(directory).resolve()
     if naming.season_number(path.name) is not None:
@@ -294,7 +243,7 @@ def series_query(directory):
 
 
 def pinned_show_id(directory):
-    """Id TMDB epingle dans le nom du dossier de la serie, ou None."""
+    """Id TMDB épinglé dans le nom du dossier de la série, ou None."""
     path = Path(directory).resolve()
     if naming.season_number(path.name) is not None:
         path = path.parent
@@ -302,8 +251,7 @@ def pinned_show_id(directory):
 
 
 def resolve_show_id(tmdb, directory, forced=None):
-    """Id TMDB de la serie : celui force par --tmdb-id, sinon une recherche sur
-    le nom du dossier. Retourne None (en expliquant) si rien ne correspond."""
+    """Id TMDB de la série : celui force par --tmdb-id, sinon une recherche sur le nom du dossier. Retourne None (en expliquant) si rien ne correspond."""
     if forced:
         return forced
     pinned = pinned_show_id(directory)
@@ -325,8 +273,7 @@ def resolve_show_id(tmdb, directory, forced=None):
         print(f"Aucune serie TMDB pour '{title}'" + (f" ({year})" if year else "") + ".")
         return None
     best, notes = pick_result(results, title, key="name", date_key="first_air_date")
-    print(f"recherche : '{title}'" + (f" ({year})" if year else "")
-          + f" -> {describe(best, 'name', 'first_air_date')}")
+    print(f"recherche : '{title}'" + (f" ({year})" if year else "") + f" -> {describe(best, 'name', 'first_air_date')}")
     for note in notes:
         print(f"/!\\ {note}")
     return best["id"]

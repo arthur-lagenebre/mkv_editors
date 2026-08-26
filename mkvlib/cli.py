@@ -1,16 +1,13 @@
-"""Utilitaires de ligne de commande : console, fichier .env, cle TMDB."""
+"""Utilitaires de ligne de commande : console, fichier .env, clé TMDB."""
 
 import sys
 from pathlib import Path
 
 
 def setup_console():
-    """Force stdout/stderr en UTF-8 tolerant.
+    """Force stdout/stderr en UTF-8 tolérant.
 
-    Sous Windows la console est en cp1252 : afficher un titre TMDB japonais ou
-    cyrillique y leve UnicodeEncodeError et interrompt le script en plein
-    travail (un renommage a moitie applique, par exemple). Avec errors=replace
-    le caractere s'affiche mal, mais le traitement va au bout.
+    Sous Windows la console est en cp1252 : afficher un titre TMDB japonais ou cyrillique y leve UnicodeEncodeError et interrompt le script en plein travail (un renommage à moitié applique, par exemple). Avec errors=replace le caractère s'affiche mal, mais le traitement va au bout.
     """
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -20,12 +17,9 @@ def setup_console():
 
 
 def read_dotenv(filename=".env"):
-    """Valeurs d'un fichier .env (lignes CLE=valeur), en dictionnaire.
+    """Valeurs d'un fichier .env (lignes CLÉ=valeur), en dictionnaire.
 
-    Le fichier est cherche en remontant depuis le dossier de ce module, puis
-    depuis le dossier courant ; on s'arrete au premier trouve. Rien n'est ecrit
-    dans les variables d'environnement : le .env est la seule source de la cle,
-    et mieux vaut que ca se voie ici plutot que de se deviner ailleurs.
+    Le fichier est cherché en remontant depuis le dossier de ce module, puis depuis le dossier courant ; on s'arrête au premier trouvé. Rien n'est écrit dans les variables d'environnement : le .env est la seule source de la clé, et mieux vaut que ça se voie ici plutôt que de se deviner ailleurs.
     """
     for start in (Path(__file__).resolve().parent, Path.cwd().resolve()):
         for folder in (start, *start.parents):
@@ -44,7 +38,7 @@ def read_dotenv(filename=".env"):
                 if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
                     value = value[1:-1]
                 if name:
-                    valeurs.setdefault(name, value)      # la premiere ligne l'emporte
+                    valeurs.setdefault(name, value)      # la première ligne l'emporte
             return valeurs
     return {}
 
@@ -54,7 +48,7 @@ NO_KEY_MESSAGE = ("Aucune cle TMDB. Renseigne la ligne TMDB_KEY=... du fichier .
 
 
 def resolve_tmdb_key():
-    """Cle TMDB lue dans le fichier .env, seule source acceptee.
+    """Clé TMDB lue dans le fichier .env, seule source acceptee.
 
     Quitte avec un message explicite si le fichier manque ou ne la donne pas.
     """
@@ -65,11 +59,9 @@ def resolve_tmdb_key():
 
 
 def check_dir(path):
-    """Verifie que --dir designe un dossier existant, et s'arrete clairement sinon.
+    """Vérifie que --dir désigne un dossier existant, et s'arrête clairement sinon.
 
-    Une faute de frappe dans le chemin est l'erreur la plus courante : sans ce
-    controle, elle ressort soit en pile d'appels, soit - pire - en "aucun fichier
-    trouve", qui ressemble a une mediatheque vide.
+    Une faute de frappe dans le chemin est l'erreur la plus courante : sans ce contrôle, elle ressort soit en pile d'appels, soit - pire - en "aucun fichier trouve", qui ressemble à une médiathèque vide.
     """
     dossier = Path(path)
     if not dossier.exists():
@@ -83,11 +75,9 @@ ASK_SKIP, ASK_STOP = "ignorer", "arreter"
 
 
 def can_ask():
-    """Vrai si une question a une chance d'obtenir une reponse.
+    """Vrai si une question à une chance d'obtenir une réponse.
 
-    Sortie redirigee vers un fichier, execution dans un CI, entree fermee : la
-    question ne serait vue par personne et le script attendrait indefiniment.
-    Mieux vaut alors laisser le cas de cote que de bloquer un passage entier.
+    Sortie redirigée vers un fichier, exécution dans un CI, entrée fermée : la question ne serait vue par personne et le script attendrait indéfiniment. Mieux vaut alors laisser le cas de côté que de bloquer un passage entier.
     """
     try:
         return bool(sys.stdin and sys.stdin.isatty() and sys.stdout.isatty())
@@ -98,8 +88,7 @@ def can_ask():
 def ask_choice(nombre, defaut=0):
     """Indice choisi parmi `nombre` propositions, ou ASK_SKIP / ASK_STOP.
 
-    Entree vide = le defaut. Une reponse incomprise repose la question plutot
-    que de decider a la place de quelqu'un - c'est tout l'interet de demander.
+    Entrée vide = le défaut. Une réponse incomprise repose la question plutôt que de décider à la place de quelqu'un - c'est tout l'intérêt de demander.
     """
     while True:
         try:
@@ -120,7 +109,7 @@ def ask_choice(nombre, defaut=0):
 
 
 def mode_label(args, simulation="rien ne sera ecrit ; ajoute --apply pour appliquer"):
-    """Libelle du mode courant, pour la banniere affichee au demarrage."""
+    """Libellé du mode courant, pour la bannière affichee au démarrage."""
     if getattr(args, "verify", False):
         return "VERIFICATION (aucune ecriture)"
     return "APPLICATION" if args.apply else f"SIMULATION ({simulation})"

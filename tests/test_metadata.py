@@ -1,4 +1,4 @@
-"""Etiquetage : plan d'une saison, tags produits, choix du film sur TMDB."""
+"""Étiquetage : plan d'une saison, tags produits, choix du film sur TMDB."""
 
 import io
 import sys
@@ -13,25 +13,16 @@ from xml.etree import ElementTree
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mkvlib import lookup, mkv, naming
 from mkvlib.tmdb import TmdbError
-from Movies import Metadata as films
-from TV_Shows import Metadata as series
+from scripts.Movies import Metadata as films
+from scripts.TV_Shows import Metadata as series
 
-OPTS = mkv.Options(cover=False, date=True, audio_names=True, sub_names=True,
-                   flags=True, stats=True, image_size="w780")
-SAISON = {"season_number": 1, "name": "Saison 1", "poster_path": "/p.jpg", "episodes": [
-    {"episode_number": 1, "name": "Pilote", "overview": "Debut", "air_date": "2024-01-02",
-     "crew": [{"name": "R. Real", "job": "Director", "department": "Directing"}],
-     "guest_stars": [{"name": "A. Acteur", "character": "Lui-meme"}],
-     "vote_average": 7.84, "vote_count": 12, "still_path": "/s1.jpg"},
-    {"episode_number": 2, "name": "Suite", "air_date": "2024-01-09"},
-]}
+OPTS = mkv.Options(cover=False, date=True, audio_names=True, sub_names=True, flags=True, stats=True, image_size="w780")
+SAISON = {"season_number": 1, "name": "Saison 1", "poster_path": "/p.jpg", "episodes": [ {"episode_number": 1, "name": "Pilote", "overview": "Debut", "air_date": "2024-01-02", "crew": [{"name": "R. Real", "job": "Director", "department": "Directing"}], "guest_stars": [{"name": "A. Acteur", "character": "Lui-meme"}], "vote_average": 7.84, "vote_count": 12, "still_path": "/s1.jpg"}, {"episode_number": 2, "name": "Suite", "air_date": "2024-01-09"} ]}
 
 
 class TestPlanDeSaison(unittest.TestCase):
     def setUp(self):
-        self.args = types.SimpleNamespace(probe=False, verify=False, apply=False,
-                                          skip_done=False, match_threshold=0.55,
-                                          series_name="Ma Serie")
+        self.args = types.SimpleNamespace(probe=False, verify=False, apply=False, skip_done=False, match_threshold=0.55, series_name="Ma Serie")
 
     def process(self, dossier):
         sortie = io.StringIO()
@@ -40,7 +31,7 @@ class TestPlanDeSaison(unittest.TestCase):
         return resultat, sortie.getvalue()
 
     def test_dossier_sans_mkv(self):
-        # Regression : le retour a 2 valeurs contre 3 attendues faisait planter main().
+        # Régression : le retour à 2 valeurs contre 3 attendues faisait planter main().
         with tempfile.TemporaryDirectory() as d:
             resultat, sortie = self.process(Path(d))
         self.assertEqual(resultat, mkv.Report())
@@ -61,8 +52,7 @@ class TestTagsEpisode(unittest.TestCase):
         self.root = ElementTree.fromstring(xml)
 
     def valeur(self, cible, nom):
-        """Texte du tag `nom` au niveau `cible` (ElementTree ne sait pas filtrer sur
-        un predicat imbrique : on retrouve le bloc a la main)."""
+        """Texte du tag `nom` au niveau `cible` (ElementTree ne sait pas filtrer sur un prédicat imbriqué : on retrouve le bloc à la main)."""
         for tag in self.root.findall("Tag"):
             niveau = tag.find("Targets/TargetTypeValue")
             if niveau is not None and niveau.text == str(cible):
@@ -92,19 +82,14 @@ class TestTagsEpisode(unittest.TestCase):
         self.assertIsNone(target.poster)                  # opts.cover est False
 
     def test_jaquette_repliee_sur_l_affiche_de_saison(self):
-        opts = mkv.Options(cover=True, date=True, audio_names=True, sub_names=True,
-                           flags=True, stats=True, image_size="w780")
+        opts = mkv.Options(cover=True, date=True, audio_names=True, sub_names=True, flags=True, stats=True, image_size="w780")
         sans_vignette = series.episode_target(SAISON, SAISON["episodes"][1], "Ma Serie", opts)
         self.assertEqual(sans_vignette.poster, "/p.jpg")
 
 
 class TestFilms(unittest.TestCase):
     def test_tags_de_saga(self):
-        movie = {"title": "Iron Man", "release_date": "2008-04-30", "_order": 1,
-                 "belongs_to_collection": {"name": "Iron Man - Saga"},
-                 "genres": [{"name": "Action"}, {"name": "Science-Fiction"}],
-                 "credits": {"crew": [{"name": "J. Favreau", "job": "Director"}],
-                             "cast": [{"name": "R. Downey Jr.", "character": "Tony Stark"}]}}
+        movie = {"title": "Iron Man", "release_date": "2008-04-30", "_order": 1, "belongs_to_collection": {"name": "Iron Man - Saga"}, "genres": [{"name": "Action"}, {"name": "Science-Fiction"}], "credits": {"crew": [{"name": "J. Favreau", "job": "Director"}], "cast": [{"name": "R. Downey Jr.", "character": "Tony Stark"}]}}
         root = ElementTree.fromstring(films.build_movie_tags_xml(movie))
         niveaux = [n.text for n in root.findall("./Tag/Targets/TargetTypeValue")]
         self.assertEqual(niveaux, ["70", "50"])
@@ -115,9 +100,8 @@ class TestFilms(unittest.TestCase):
         self.assertEqual(film.find("Simple[Name='GENRE']/String").text, "Action, Science-Fiction")
 
     def test_l_identifiant_est_inscrit_dans_le_film(self):
-        # Pour que le passage suivant n ait plus rien a chercher.
-        root = ElementTree.fromstring(films.build_movie_tags_xml({"id": 314,
-                                                                  "title": "Catwoman"}))
+        # Pour que le passage suivant n ait plus rien à chercher.
+        root = ElementTree.fromstring(films.build_movie_tags_xml({"id": 314, "title": "Catwoman"}))
         film = root.findall("Tag")[-1]
         self.assertEqual(film.find("Simple[Name='TMDB']/String").text, "movie/314")
     def test_film_hors_saga(self):
@@ -127,27 +111,24 @@ class TestFilms(unittest.TestCase):
 
 
 def sous_titre(langue, nom):
-    """Piste de sous-titres minimale, telle que mkvmerge la decrit."""
-    return {"type": "subtitles", "codec": "",
-            "properties": {"language": langue, "track_name": nom}}
+    """Piste de sous-titres minimale, telle que mkvmerge la décrit."""
+    return {"type": "subtitles", "codec": "", "properties": {"language": langue, "track_name": nom}}
 
 class TestFilmNonTraite(unittest.TestCase):
-    """Une piste ambigue arrete tout le film, et la raison est dite."""
+    """Une piste ambiguë arrête tout le film, et la raison est dite."""
 
     AMBIGU = {"tracks": [sous_titre("eng", "English"), sous_titre("eng", "English")]}
-    SAIN = {"tracks": [sous_titre("fre", "Français forcé"),
-                       sous_titre("fre", "Français complet")]}
+    SAIN = {"tracks": [sous_titre("fre", "Français forcé"), sous_titre("fre", "Français complet")]}
 
     def process(self, *infos):
-        """Lance process_movie sur un film d un fichier par info donnee."""
+        """Lance process_movie sur un film d un fichier par info donnée."""
         args = types.SimpleNamespace(verify=False, apply=False, skip_done=False)
         chemins = [Path(f"cd{i}.mkv") for i, _ in enumerate(infos, 1)]
         entry = naming.MovieFolder(folder=Path("."), files=chemins, rawname="Film")
         lectures = {p: mkv.Reading(info=info) for p, info in zip(chemins, infos)}
         sortie = io.StringIO()
         with redirect_stdout(sortie):
-            report = films.process_movie(entry, {"title": "Film"}, lectures,
-                                         args, OPTS, None)
+            report = films.process_movie(entry, {"title": "Film"}, lectures, args, OPTS, None)
         return report, sortie.getvalue()
 
     def test_film_ambigu_laisse_intact(self):
@@ -155,7 +136,7 @@ class TestFilmNonTraite(unittest.TestCase):
         self.assertEqual((report.matched, report.total, report.skipped), (1, 1, 1))
         self.assertIn("[NON TRAITE]", sortie)
         self.assertIn("st s1 et st s2 [en]", sortie)
-        self.assertNotIn(" -> ", sortie)          # aucun renommage n a ete prepare
+        self.assertNotIn(" -> ", sortie)          # aucun renommage n a été préparé
 
     def test_film_sain_traite_normalement(self):
         report, sortie = self.process(self.SAIN)
@@ -163,12 +144,11 @@ class TestFilmNonTraite(unittest.TestCase):
         self.assertIn("+Forced", sortie)
 
     def test_un_seul_fichier_ambigu_bloque_le_film_entier(self):
-        # A moitie etiquete, le film aurait l air fait : le souci passerait a la
-        # trappe au passage suivant.
+        # À moitié etiquete, le film aurait l air fait : le souci passerait à la trappe au passage suivant.
         report, sortie = self.process(self.SAIN, self.AMBIGU)
         self.assertEqual(report.skipped, 1)
         self.assertIn("cd2.mkv : st s1 et st s2", sortie)
-        self.assertNotIn("+Forced", sortie)       # cd1.mkv non plus n a ete prepare
+        self.assertNotIn("+Forced", sortie)       # cd1.mkv non plus n a été préparé
 
     def test_le_bilan_le_compte_et_le_signale(self):
         report = mkv.Report(matched=1, total=1) + mkv.Report(matched=1, total=1, skipped=1)
@@ -177,7 +157,7 @@ class TestFilmNonTraite(unittest.TestCase):
         self.assertEqual(report.exit_code, 1)
 
 class FauxTmdbFilms:
-    """Rend une fiche par id, et une recherche fixe. Note ce qui a ete demande."""
+    """Rend une fiche par id, et une recherche fixe. Note ce qui a été demandé."""
 
     def __init__(self, resultats=()):
         self.resultats = list(resultats)
@@ -196,29 +176,22 @@ class FauxTmdbFilms:
 
 
 class TestQuestionsDeFinDePassage(unittest.TestCase):
-    """Une association douteuse attend la fin du passage, et une reponse."""
+    """Une association douteuse attend la fin du passage, et une réponse."""
 
-    CANDIDATS = [{"id": 22059, "title": "Les Quatre Fantastiques",
-                  "release_date": "1994-01-01"},
-                 {"id": 9738, "title": "Les 4 Fantastiques",
-                  "release_date": "2005-07-06"}]
+    CANDIDATS = [{"id": 22059, "title": "Les Quatre Fantastiques", "release_date": "1994-01-01"}, {"id": 9738, "title": "Les 4 Fantastiques", "release_date": "2005-07-06"}]
 
     def setUp(self):
-        self.args = types.SimpleNamespace(no_tag=True, artwork=False, apply=False,
-                                          verify=False, skip_done=False, no_ask=False,
-                                          language="fr-FR", no_date=True, tmdb_id=None)
+        self.args = types.SimpleNamespace(no_tag=True, artwork=False, apply=False, verify=False, skip_done=False, no_ask=False, language="fr-FR", no_date=True, tmdb_id=None)
 
     def attente(self, combien=1):
         sortie = []
         for i in range(combien):
-            entry = naming.MovieFolder(folder=Path("."), files=[Path(f"f{i}.mkv")],
-                                       rawname=f"Les Quatre Fantastiques {i}")
-            sortie.append((entry, lookup.Doubt(query="Les Quatre Fantastiques",
-                                               candidates=list(self.CANDIDATS))))
+            entry = naming.MovieFolder(folder=Path("."), files=[Path(f"f{i}.mkv")], rawname=f"Les Quatre Fantastiques {i}")
+            sortie.append((entry, lookup.Doubt(query="Les Quatre Fantastiques", candidates=list(self.CANDIDATS))))
         return sortie
 
     def poser(self, reponses, combien=1, interactif=True):
-        """Joue resolve_pending avec des reponses prefabriquees."""
+        """Joue resolve_pending avec des réponses préfabriquées."""
         tmdb = FauxTmdbFilms()
         library = films.Library([], {}, {})
         restantes, demandes = list(reponses), []
@@ -231,8 +204,7 @@ class TestQuestionsDeFinDePassage(unittest.TestCase):
         with mock.patch.object(films.cli, "can_ask", lambda: interactif):
             with mock.patch.object(films.cli, "ask_choice", faux_choix):
                 with redirect_stdout(sortie):
-                    report = films.resolve_pending(self.attente(combien), library,
-                                                   self.args, OPTS, tmdb)
+                    report = films.resolve_pending(self.attente(combien), library, self.args, OPTS, tmdb)
         return report, sortie.getvalue(), tmdb, demandes
 
     def test_la_reponse_choisit_la_fiche(self):
@@ -253,11 +225,11 @@ class TestQuestionsDeFinDePassage(unittest.TestCase):
 
     def test_arreter_saute_toutes_les_suivantes(self):
         report, _, tmdb, demandes = self.poser([films.cli.ASK_STOP], combien=3)
-        self.assertEqual(len(demandes), 1)              # une seule question posee
+        self.assertEqual(len(demandes), 1)              # une seule question posée
         self.assertEqual((report.pending, tmdb.details), (3, []))
 
     def test_terminal_non_interactif_ne_bloque_pas(self):
-        # Sortie redirigee : la question ne serait vue par personne.
+        # Sortie redirigée : la question ne serait vue par personne.
         report, sortie, tmdb, demandes = self.poser([], combien=2, interactif=False)
         self.assertEqual((demandes, tmdb.details), ([], []))
         self.assertEqual((report.total, report.pending), (2, 2))
@@ -266,12 +238,11 @@ class TestQuestionsDeFinDePassage(unittest.TestCase):
     def resoudre(self):
         tmdb = FauxTmdbFilms(self.CANDIDATS)
         with redirect_stdout(io.StringIO()):
-            movie, doute = films.resolve_movie("Les Quatre Fantastiques", self.args,
-                                               tmdb, single=False)
+            movie, doute = films.resolve_movie("Les Quatre Fantastiques", self.args, tmdb, single=False)
         return movie, doute, tmdb
 
     def test_no_ask_garde_le_premier_resultat(self):
-        # L echappatoire pour les scripts : le comportement d avant.
+        # L échappatoire pour les scripts : le comportement d avant.
         self.args.no_ask = True
         movie, doute, _ = self.resoudre()
         self.assertIsNone(doute)
@@ -280,27 +251,25 @@ class TestQuestionsDeFinDePassage(unittest.TestCase):
     def test_sans_no_ask_la_question_est_mise_de_cote(self):
         movie, doute, tmdb = self.resoudre()
         self.assertIsNone(movie)                        # pas encore charge
-        self.assertEqual(tmdb.details, [])              # ni meme interroge
+        self.assertEqual(tmdb.details, [])              # ni même interroge
         self.assertEqual([c["id"] for c in doute.candidates], [22059, 9738])
 
 class TestIdentifiantLuDansLeFilm(unittest.TestCase):
     """Un identifiant inscrit dans le .mkv dispense de toute recherche."""
 
     def setUp(self):
-        self.args = types.SimpleNamespace(no_ask=False, language="fr-FR",
-                                          no_date=True, tmdb_id=None)
+        self.args = types.SimpleNamespace(no_ask=False, language="fr-FR", no_date=True, tmdb_id=None)
 
     def resoudre(self, rawname, tag_id):
         tmdb = FauxTmdbFilms([{"id": 999, "title": "Autre chose"}])
         with redirect_stdout(io.StringIO()) as sortie:
-            movie, _ = films.resolve_movie(rawname, self.args, tmdb, single=False,
-                                           tag_id=tag_id)
+            movie, _ = films.resolve_movie(rawname, self.args, tmdb, single=False, tag_id=tag_id)
         return movie, tmdb, sortie.getvalue()
 
     def test_l_identifiant_du_fichier_evite_la_recherche(self):
         movie, tmdb, sortie = self.resoudre("zzz nom illisible", "314")
         self.assertEqual(movie["id"], 314)
-        self.assertEqual(tmdb.recherches, [])          # rien n a ete cherche
+        self.assertEqual(tmdb.recherches, [])          # rien n a été cherché
         self.assertIn("id lu dans le fichier", sortie)
 
     def test_le_nom_epingle_prime_sur_le_fichier(self):
@@ -313,16 +282,11 @@ class TestIdentifiantLuDansLeFilm(unittest.TestCase):
         self.assertEqual((movie["id"], tmdb.recherches), (999, ["Un film"]))
 
 class TestRecap(unittest.TestCase):
-    SAISON = {"season_number": 1, "name": "Saison 1", "episodes": [
-        {"episode_number": 1, "name": "Un", "air_date": "2024-01-02"},
-        {"episode_number": 2, "name": "Deux"},
-        {"episode_number": 3, "name": "Trois"},
-    ]}
+    SAISON = {"season_number": 1, "name": "Saison 1", "episodes": [ {"episode_number": 1, "name": "Un", "air_date": "2024-01-02"}, {"episode_number": 2, "name": "Deux"}, {"episode_number": 3, "name": "Trois"} ]}
 
     def rendre(self, owned):
         run = series.SeasonRun(Path("."), 1, self.SAISON, owned)
-        return series.build_recap_html("Ma Serie", {"overview": "Resume"},
-                                       [run], "1234", {}, "w300")
+        return series.build_recap_html("Ma Serie", {"overview": "Resume"}, [run], "1234", {}, "w300")
 
     def test_episodes_absents_marques(self):
         html = self.rendre({1})
@@ -336,7 +300,7 @@ class TestRecap(unittest.TestCase):
         self.assertIn("<span class='cnt'>3/3</span>", html)
 
     def test_sans_inventaire_rien_n_est_juge(self):
-        # Aucun fichier repere : tout declarer manquant serait un mensonge.
+        # Aucun fichier repère : tout déclarer manquant serait un mensonge.
         html = self.rendre(set())
         self.assertNotIn("class='miss'", html)
         self.assertNotIn("class='cnt'", html)
@@ -356,18 +320,15 @@ class TestRecap(unittest.TestCase):
         self.assertNotIn("<b>Jerry</b>", html)
 
     def test_vignettes_integrees_et_manquantes(self):
-        saison = dict(self.SAISON, episodes=[
-            {"episode_number": 1, "name": "Un", "still_path": "/a.jpg"},
-            {"episode_number": 2, "name": "Deux"}])
+        saison = dict(self.SAISON, episodes=[ {"episode_number": 1, "name": "Un", "still_path": "/a.jpg"}, {"episode_number": 2, "name": "Deux"}])
         run = series.SeasonRun(Path("."), 1, saison, {1, 2})
-        html = series.build_recap_html("S", {}, [run], "1",
-                                       {"w300/a.jpg": "data:image/jpeg;base64,AAA"}, "w300")
+        html = series.build_recap_html("S", {}, [run], "1", {"w300/a.jpg": "data:image/jpeg;base64,AAA"}, "w300")
         self.assertIn("<img data-img='w300/a.jpg' src='data:image/jpeg;base64,AAA'", html)
         self.assertIn("<div class='noimg'></div>", html)
 
 
 class FauxTmdb:
-    """Renvoie des sagas preparees, et compte les appels."""
+    """Renvoie des sagas préparées, et compte les appels."""
 
     def __init__(self, sagas, echecs=()):
         self.sagas = sagas
@@ -381,16 +342,11 @@ class FauxTmdb:
         return self.sagas[ident]
 
 
-IRON = {"id": 1, "name": "Iron Man - Saga", "parts": [
-    {"id": 11, "title": "Iron Man", "release_date": "2008-04-30", "poster_path": "/a.jpg"},
-    {"id": 12, "title": "Iron Man 2", "release_date": "2010-04-28", "poster_path": "/b.jpg"},
-    {"id": 13, "title": "Iron Man 3", "release_date": "2013-04-24"},
-]}
+IRON = {"id": 1, "name": "Iron Man - Saga", "parts": [ {"id": 11, "title": "Iron Man", "release_date": "2008-04-30", "poster_path": "/a.jpg"}, {"id": 12, "title": "Iron Man 2", "release_date": "2010-04-28", "poster_path": "/b.jpg"}, {"id": 13, "title": "Iron Man 3", "release_date": "2013-04-24"} ]}
 
 
 def film(ident, titre, saga=None, **extra):
-    movie = {"id": ident, "title": titre, "release_date": "2008-04-30",
-             "runtime": 126, "poster_path": "/a.jpg"}
+    movie = {"id": ident, "title": titre, "release_date": "2008-04-30", "runtime": 126, "poster_path": "/a.jpg"}
     if saga:
         movie["belongs_to_collection"] = {"id": saga["id"], "name": saga["name"]}
     movie.update(extra)
@@ -400,10 +356,8 @@ def film(ident, titre, saga=None, **extra):
 class TestRecapFilms(unittest.TestCase):
     def test_une_requete_par_saga(self):
         tmdb = FauxTmdb({1: IRON})
-        sagas = films.fetch_collections([film(11, "Iron Man", IRON),
-                                         film(13, "Iron Man 3", IRON),
-                                         film(99, "Heat")], tmdb)
-        self.assertEqual(tmdb.appels, [1])          # la saga n'est demandee qu'une fois
+        sagas = films.fetch_collections([film(11, "Iron Man", IRON), film(13, "Iron Man 3", IRON), film(99, "Heat")], tmdb)
+        self.assertEqual(tmdb.appels, [1])          # la saga n'est demandée qu'une fois
         self.assertEqual(list(sagas), [1])
 
     def test_saga_indisponible_ignoree(self):
@@ -418,12 +372,10 @@ class TestRecapFilms(unittest.TestCase):
         sections = films.library_sections([film(11, "Iron Man", IRON)], {1: IRON})
         titre, cards = sections[0]
         self.assertEqual(titre, "Iron Man - Saga")
-        self.assertEqual([(c.title, c.owned) for c in cards],
-                         [("Iron Man", True), ("Iron Man 2", False), ("Iron Man 3", False)])
+        self.assertEqual([(c.title, c.owned) for c in cards], [("Iron Man", True), ("Iron Man 2", False), ("Iron Man 3", False)])
 
     def test_films_hors_saga_a_la_fin(self):
-        sections = films.library_sections(
-            [film(11, "Iron Man", IRON), film(99, "Heat"), film(98, "Alien")], {1: IRON})
+        sections = films.library_sections([film(11, "Iron Man", IRON), film(99, "Heat"), film(98, "Alien")], {1: IRON})
         self.assertEqual([t for t, _ in sections], ["Iron Man - Saga", "Hors saga"])
         self.assertEqual([c.title for c in sections[-1][1]], ["Alien", "Heat"])
 
@@ -432,7 +384,7 @@ class TestRecapFilms(unittest.TestCase):
         self.assertEqual([t for t, _ in sections], ["Hors saga"])
 
     def test_donnees_du_film_possede_prioritaires(self):
-        # Le film qu'on possede apporte sa duree et son synopsis, pas la fiche de saga.
+        # Le film qu'on possède apporte sa durée et son synopsis, pas la fiche de saga.
         possede = film(11, "Iron Man", IRON, runtime=126, overview="Tony Stark")
         cards = films.library_sections([possede], {1: IRON})[0][1]
         self.assertEqual((cards[0].runtime, cards[0].overview), (126, "Tony Stark"))
@@ -456,8 +408,7 @@ class TestRenduRecapFilms(unittest.TestCase):
         self.assertIn("2010", html)
 
     def test_resume_de_la_mediatheque(self):
-        sections = [("Saga", [films.Card("A"), films.Card("B", owned=False)]),
-                    ("Hors saga", [films.Card("C")])]
+        sections = [("Saga", [films.Card("A"), films.Card("B", owned=False)]), ("Hors saga", [films.Card("C")])]
         html = self.rendre(sections)
         self.assertIn("2 film(s) · 1 saga(s) · 1 manquant(s) dans les sagas", html)
 

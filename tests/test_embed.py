@@ -1,4 +1,4 @@
-"""Images encodees dans une fiche HTML : cle, balise, cache, telechargement."""
+"""Images encodées dans une fiche HTML : clé, balise, cache, téléchargement."""
 
 import base64
 import io
@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mkvlib import embed
 from mkvlib.tmdb import TmdbError
 
-
 class FauxTmdb:
     def __init__(self, echecs=()):
         self.echecs = set(echecs)
@@ -24,7 +23,6 @@ class FauxTmdb:
             raise TmdbError("indisponible")
         return path.encode("utf-8")
 
-
 class TestCle(unittest.TestCase):
     def test_taille_et_chemin(self):
         self.assertEqual(embed.image_key("/aBc.jpg", "w300"), "w300/aBc.jpg")
@@ -33,9 +31,8 @@ class TestCle(unittest.TestCase):
         self.assertIsNone(embed.image_key(None, "w300"))
 
     def test_chemin_inattendu_refuse(self):
-        # La cle finit dans un attribut HTML : on n'y laisse passer que du connu.
+        # La clé finit dans un attribut HTML : on n'y laisse passer que du connu.
         self.assertIsNone(embed.image_key("/a'onerror=alert(1).jpg", "w300"))
-
 
 class TestCache(unittest.TestCase):
     def relire(self, html):
@@ -49,13 +46,12 @@ class TestCache(unittest.TestCase):
         self.assertEqual(self.relire(html), {"w300/a.jpg": "data:image/jpeg;base64,AAA"})
 
     def test_ancien_attribut_toujours_lu(self):
-        # Les fiches generees avant le partage du code utilisaient 'data-still'.
+        # Les fiches générées avant le partage du code utilisaient 'data-still'.
         html = "<img data-still='w300/b.jpg' src='data:image/jpeg;base64,BBB'>"
         self.assertEqual(self.relire(html), {"w300/b.jpg": "data:image/jpeg;base64,BBB"})
 
     def test_fiche_absente(self):
         self.assertEqual(embed.read_embedded(Path("nexiste_pas.html")), {})
-
 
 class TestTelechargement(unittest.TestCase):
     def fetch(self, needed, cached, tmdb):
@@ -73,8 +69,7 @@ class TestTelechargement(unittest.TestCase):
 
     def test_cache_evite_le_reseau(self):
         tmdb = FauxTmdb()
-        images, sortie = self.fetch({"w300/a.jpg": "/a.jpg"},
-                                    {"w300/a.jpg": "data:image/jpeg;base64,DEJA"}, tmdb)
+        images, sortie = self.fetch({"w300/a.jpg": "/a.jpg"}, {"w300/a.jpg": "data:image/jpeg;base64,DEJA"}, tmdb)
         self.assertEqual(images["w300/a.jpg"], "data:image/jpeg;base64,DEJA")
         self.assertEqual(tmdb.demandes, [])
         self.assertIn("reprise(s)", sortie)
@@ -84,7 +79,6 @@ class TestTelechargement(unittest.TestCase):
         images, sortie = self.fetch({"w300/a.jpg": "/a.jpg", "w300/b.jpg": "/b.jpg"}, {}, tmdb)
         self.assertEqual(list(images), ["w300/a.jpg"])
         self.assertIn("ignoree", sortie)
-
 
 if __name__ == "__main__":
     unittest.main()

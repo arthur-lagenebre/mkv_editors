@@ -1,4 +1,4 @@
-"""Appariement d'un dossier de saga a une collection TMDB (aucun reseau)."""
+"""Appariement d'un dossier de saga à une collection TMDB (aucun réseau)."""
 
 import sys
 import unittest
@@ -41,41 +41,28 @@ class TestAppariement(unittest.TestCase):
         return {cle: part["id"] for cle, part in resultat}
 
     def test_le_numero_place_le_film(self):
-        # Trois volumes au titre identique : seul le numero les separe. Il faut
-        # que la numerotation couvre la saga pour valoir comme rang.
+        # Trois volumes au titre identique : seul le numéro les sépare. Il faut que la numérotation couvre la saga pour valoir comme rang.
         parts = [{"id": 101, "title": "Vol. 1 : Episode", "release_date": "1961-01-01"},
                  {"id": 102, "title": "Vol. 2 : Episode", "release_date": "1962-01-01"},
                  {"id": 103, "title": "Vol. 3 : Episode", "release_date": "1963-01-01"}]
         fichiers = [("a", "Episode", 1), ("b", "Episode", 2), ("c", "Episode", 3)]
-        self.assertEqual(self.cles(saga.assign(fichiers, parts)),
-                         {"a": 101, "b": 102, "c": 103})
+        self.assertEqual(self.cles(saga.assign(fichiers, parts)), {"a": 101, "b": 102, "c": 103})
 
     def test_l_evidence_puis_l_elimination(self):
-        # "Apocalypse" se place tout seul ; "Ground Zero" et "The final Chapter"
-        # ne ressemblent a rien et heritent de ce qui reste.
-        fichiers = [("a", "Ground Zero", 1), ("b", "Apocalypse", 2),
-                    ("c", "The final Chapter", 3)]
-        self.assertEqual(self.cles(saga.assign(fichiers, RESIDENT_EVIL)),
-                         {"a": 1576, "b": 1577, "c": 1578})
+        # "Apocalypse" se place tout seul ; "Ground Zero" et "The final Chapter" ne ressemblent à rien et héritent de ce qui reste.
+        fichiers = [("a", "Ground Zero", 1), ("b", "Apocalypse", 2), ("c", "The final Chapter", 3)]
+        self.assertEqual(self.cles(saga.assign(fichiers, RESIDENT_EVIL)), {"a": 1576, "b": 1577, "c": 1578})
 
     def test_une_numerotation_incomplete_ne_vaut_pas_un_rang(self):
-        # Regression : "Hobbs & Shaw" occupe le rang 9 de sa saga sans etre
-        # numerote sur le disque, et "10 - Fast X" se faisait placer sur
-        # "Fast & Furious 9". Trois fichiers pour quatre films : on ne peut plus
-        # se fier aux numeros, seuls les titres parlent.
-        parts = RESIDENT_EVIL + [{"id": 9, "title": "Un spin-off",
-                                  "release_date": "2005-01-01"}]
-        fichiers = [("a", "Ground Zero", 1), ("b", "Apocalypse", 2),
-                    ("c", "The final Chapter", 3)]
+        # Régression : "Hobbs & Shaw" occupe le rang 9 de sa saga sans être numéroté sur le disque, et "10 - Fast X" se faisait placer sur "Fast & Furious 9". Trois fichiers pour quatre films : on ne peut plus se fier aux numéros, seuls les titres parlent.
+        parts = RESIDENT_EVIL + [{"id": 9, "title": "Un spin-off", "release_date": "2005-01-01"}]
+        fichiers = [("a", "Ground Zero", 1), ("b", "Apocalypse", 2), ("c", "The final Chapter", 3)]
         self.assertFalse(saga.trustworthy_order(fichiers, parts))
-        # Et le dossier entier est laisse tranquille : sans rang fiable, les
-        # titres jumeaux d une saga s apparient n importe comment ("Fast five"
-        # a fini sur "Fast Forever", sorti en 2028).
+        # Et le dossier entier est laissé tranquille : sans rang fiable, les titres jumeaux d une saga s apparient n importe comment ("Fast five" à fini sur "Fast Forever", sorti en 2028).
         self.assertEqual(saga.assign(fichiers, parts), [])
 
     def test_une_numerotation_complete_vaut_un_rang(self):
-        fichiers = [("a", "Ground Zero", 1), ("b", "Apocalypse", 2),
-                    ("c", "The final Chapter", 3)]
+        fichiers = [("a", "Ground Zero", 1), ("b", "Apocalypse", 2), ("c", "The final Chapter", 3)]
         self.assertTrue(saga.trustworthy_order(fichiers, RESIDENT_EVIL))
     def test_un_film_de_la_saga_ne_sert_qu_une_fois(self):
         fichiers = [("a", "Apocalypse", None), ("b", "Apocalypse", None)]
@@ -83,8 +70,7 @@ class TestAppariement(unittest.TestCase):
         self.assertEqual(len(resultat), 1)
 
     def test_un_titre_muet_sans_numero_n_est_pas_force(self):
-        # Sans numero, rien ne dit que "Ground Zero" est le premier film : mieux
-        # vaut ne rien dire que de lui coller une fiche au hasard.
+        # Sans numéro, rien ne dit que "Ground Zero" est le premier film : mieux vaut ne rien dire que de lui coller une fiche au hasard.
         resultat = saga.assign([("a", "Ground Zero", None)], RESIDENT_EVIL)
         self.assertEqual(resultat, [])
 
@@ -97,8 +83,7 @@ class TestAppariement(unittest.TestCase):
 
     def test_resultat_deterministe(self):
         fichiers = [("a", "Apocalypse", None), ("b", "Apocalypse", None)]
-        self.assertEqual(saga.assign(fichiers, RESIDENT_EVIL),
-                         saga.assign(fichiers, RESIDENT_EVIL))
+        self.assertEqual(saga.assign(fichiers, RESIDENT_EVIL), saga.assign(fichiers, RESIDENT_EVIL))
 
 
 class TestSagaDuDossier(unittest.TestCase):
@@ -106,7 +91,7 @@ class TestSagaDuDossier(unittest.TestCase):
         self.assertEqual(saga.most_common_collection([7, 7, None, None]), 7)
 
     def test_un_seul_film_n_en_fait_pas_une(self):
-        # Suivre un unique film, ce serait suivre une association peut-etre fausse.
+        # Suivre un unique film, ce serait suivre une association peut-être fausse.
         self.assertIsNone(saga.most_common_collection([9, None, None]))
 
     def test_aucune_collection(self):
@@ -114,11 +99,10 @@ class TestSagaDuDossier(unittest.TestCase):
 
 
 class TestControleDeNumerotation(unittest.TestCase):
-    """Ce qui separe une saga d un dossier de rangement."""
+    """Ce qui sépare une saga d un dossier de rangement."""
 
     def test_le_mcu_ne_tient_pas_dans_une_saga_de_quatre(self):
-        # 35 films numerotes, une collection de 4 : sans ce controle, le film
-        # n. 4 se ferait placer au 4e rang d une saga qui n est pas la sienne.
+        # 35 films numérotés, une collection de 4 : sans ce contrôle, le film n. 4 se ferait placer au 4e rang d une saga qui n est pas la sienne.
         fichiers = [(f"f{i}", "Film", i) for i in range(1, 36)]
         self.assertFalse(saga.fits(fichiers, RESIDENT_EVIL))
 
@@ -127,8 +111,7 @@ class TestControleDeNumerotation(unittest.TestCase):
         self.assertTrue(saga.fits(fichiers, RESIDENT_EVIL))
 
     def test_sans_numero_rien_a_verifier(self):
-        # Un dossier sans numerotation ne peut pas se contredire : c est la
-        # ressemblance des titres qui protege, pas le comptage.
+        # Un dossier sans numérotation ne peut pas se contredire : c est la ressemblance des titres qui protège, pas le comptage.
         self.assertTrue(saga.fits([("a", "Apocalypse", None)], RESIDENT_EVIL))
 
     def test_un_demi_numero_ne_compte_pas(self):

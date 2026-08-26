@@ -1,4 +1,4 @@
-"""Renommage des dossiers de films : ce qui est vise, et ce qui est protege."""
+"""Renommage des dossiers de films : ce qui est vise, et ce qui est protège."""
 
 import io
 import sys
@@ -10,13 +10,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mkvlib import naming
-from Movies import Rename_Movies as renommeur
+from scripts.Movies import Rename_Movies as renommeur
 
 DUNE = {"id": 438631, "title": "Dune", "release_date": "2021-09-15"}
 
 
 class FauxTmdb:
-    """Rend toujours le meme film ; note les recherches et les acces par id."""
+    """Rend toujours le même film ; note les recherches et les accès par id."""
 
     def __init__(self, film=None):
         self.film = film or DUNE
@@ -76,7 +76,7 @@ class TestNomVise(unittest.TestCase):
         self.assertEqual(renommeur.target_stem(film, None, False), "Mission Impossible (1996)")
 
     def test_epinglage_conserve_sans_l_option(self):
-        # Regression : un passage sans --pin-id retirait les identifiants deja poses.
+        # Régression : un passage sans --pin-id retirait les identifiants déjà posés.
         self.assertTrue(renommeur.wants_pin("Dune (2021) [tmdbid-438631]", False))
         self.assertFalse(renommeur.wants_pin("Dune (2021)", False))
         self.assertTrue(renommeur.wants_pin("Dune (2021)", True))
@@ -114,16 +114,15 @@ class TestRenommage(RenameMoviesTestCase):
         tally, contenu, tmdb = self.lancer()          # second passage
         self.assertEqual(contenu, ["Dune (2021) [tmdbid-438631]"])
         self.assertEqual(tally.named, 1)
-        self.assertEqual(tmdb.recherches, [])         # plus rien a chercher
-        self.assertEqual(tmdb.par_id, ["438631"])   # l'id epingle est du texte
+        self.assertEqual(tmdb.recherches, [])         # plus rien à chercher
+        self.assertEqual(tmdb.par_id, ["438631"])   # l'id épinglé est du texte
 
     def test_le_proprietaire_du_nom_est_celui_qui_le_porte(self):
-        # Regression : le dossier deja correct etait declare doublon si un autre
-        # visait son nom avant lui.
+        # Régression : le dossier déjà correct était declare doublon si un autre visait son nom avant lui.
         self.creer_dossiers("Dune (2021)", "dune bis")
         tally, contenu, _ = self.lancer()
         self.assertIn("Dune (2021)", contenu)
-        self.assertIn("dune bis", contenu)            # l'autre n'ecrase rien
+        self.assertIn("dune bis", contenu)            # l'autre n'écrase rien
         self.assertEqual(tally.named, 1)
 
     def test_fichiers_a_plat_avec_sous_titres(self):
@@ -144,26 +143,23 @@ class TestRenommage(RenameMoviesTestCase):
 
 
     def test_dossier_de_saga_renomme_les_films_pas_le_dossier(self):
-        # Le dossier de saga n'est pas un film : il garde son nom, et ce sont les
-        # .mkv qu'il contient qui prennent le leur.
+        # Le dossier de saga n'est pas un film : il garde son nom, et ce sont les .mkv qu'il contient qui prennent le leur.
         (self.racine / "Saga").mkdir()
         for nom in ("1 - dune 2021.mkv", "2 - dune bis.mkv"):
             (self.racine / "Saga" / nom).write_text("x", encoding="utf-8")
         tally, contenu, _ = self.lancer()
         self.assertEqual(contenu, ["Saga"])
-        self.assertEqual(sorted(p.name for p in (self.racine / "Saga").iterdir()),
-                         ["1 - Dune (2021).mkv", "2 - Dune (2021).mkv"])
+        self.assertEqual(sorted(p.name for p in (self.racine / "Saga").iterdir()), ["1 - Dune (2021).mkv", "2 - Dune (2021).mkv"])
         self.assertEqual((tally.named, tally.total), (2, 2))
 
     def test_film_seul_dans_son_dossier_renomme_le_dossier(self):
-        # Regression : la recursion ne doit pas faire perdre le cas courant.
+        # Régression : la récursion ne doit pas faire perdre le cas courant.
         (self.racine / "Saga").mkdir()
         (self.racine / "Saga" / "dune 2021").mkdir()
         (self.racine / "Saga" / "dune 2021" / "film.mkv").write_text("x", encoding="utf-8")
         _, contenu, _ = self.lancer()
         self.assertEqual(contenu, ["Saga"])
-        self.assertEqual([p.name for p in (self.racine / "Saga").iterdir()],
-                         ["Dune (2021)"])
+        self.assertEqual([p.name for p in (self.racine / "Saga").iterdir()], ["Dune (2021)"])
 
 if __name__ == "__main__":
     unittest.main()

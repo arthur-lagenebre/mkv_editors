@@ -1,4 +1,4 @@
-"""Lecture du .env et resolution de la cle TMDB."""
+"""Lecture du .env et résolution de la clé TMDB."""
 
 import os
 import sys
@@ -11,14 +11,12 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mkvlib import cli
 
-
 class TestDotenv(unittest.TestCase):
     def charger(self, contenu):
-        """Ecrit un .env dans un dossier temporaire et le lit depuis ce dossier."""
+        """Écrit un .env dans un dossier temporaire et le lit depuis ce dossier."""
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / ".env").write_text(contenu, encoding="utf-8")
-            with mock.patch.object(cli.Path, "cwd", staticmethod(lambda: Path(d))), \
-                 mock.patch.object(cli, "__file__", str(Path(d) / "cli.py")):
+            with mock.patch.object(cli.Path, "cwd", staticmethod(lambda: Path(d))), mock.patch.object(cli, "__file__", str(Path(d) / "cli.py")):
                 return cli.read_dotenv()
 
     def test_paire_simple(self):
@@ -40,13 +38,11 @@ class TestDotenv(unittest.TestCase):
 
     def test_fichier_absent(self):
         with tempfile.TemporaryDirectory() as d:
-            with mock.patch.object(cli.Path, "cwd", staticmethod(lambda: Path(d))), \
-                 mock.patch.object(cli, "__file__", str(Path(d) / "cli.py")):
+            with mock.patch.object(cli.Path, "cwd", staticmethod(lambda: Path(d))), mock.patch.object(cli, "__file__", str(Path(d) / "cli.py")):
                 self.assertEqual(cli.read_dotenv("nexiste_pas.env"), {})
 
     def test_environnement_ni_lu_ni_ecrit(self):
-        # Le .env est la seule source : une variable d'environnement ne le
-        # remplace plus, et la lecture ne laisse rien derriere elle.
+        # Le .env est la seule source : une variable d'environnement ne le remplace plus, et la lecture ne laisse rien derrière elle.
         with mock.patch.dict(os.environ, {"TMDB_KEY": "de_l_environnement"}, clear=True):
             self.assertEqual(self.charger("TMDB_KEY=du_fichier")["TMDB_KEY"], "du_fichier")
             self.assertEqual(os.environ["TMDB_KEY"], "de_l_environnement")
@@ -80,12 +76,9 @@ class TestCleTmdb(unittest.TestCase):
 
 class TestBanniere(unittest.TestCase):
     def test_libelles(self):
-        self.assertEqual(cli.mode_label(types.SimpleNamespace(apply=True, verify=False)),
-                         "APPLICATION")
-        self.assertEqual(cli.mode_label(types.SimpleNamespace(apply=True, verify=True)),
-                         "VERIFICATION (aucune ecriture)")
+        self.assertEqual(cli.mode_label(types.SimpleNamespace(apply=True, verify=False)), "APPLICATION")
+        self.assertEqual(cli.mode_label(types.SimpleNamespace(apply=True, verify=True)), "VERIFICATION (aucune ecriture)")
         self.assertIn("SIMULATION", cli.mode_label(types.SimpleNamespace(apply=False, verify=False)))
-
 
 class TestDossier(unittest.TestCase):
     def test_dossier_valide_rendu(self):
@@ -104,7 +97,6 @@ class TestDossier(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 cli.check_dir(fichier)
         self.assertIn("pas un fichier", str(ctx.exception))
-
 
 if __name__ == "__main__":
     unittest.main()
