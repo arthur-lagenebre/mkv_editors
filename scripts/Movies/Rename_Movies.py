@@ -3,14 +3,9 @@ r"""
 Rename_Movies.py — Renomme les dossiers (ou fichiers) de films avec les noms TMDB.
 
 Format applique :  "Titre (Année)"
-  - Un préfixe d'ordre de saga est conservé : "1 - Iron Man" -> "1 - Iron Man (2008)".
-    C'est lui qui devient le numéro dans la collection quand Metadata.py étiquette.
-  - Un dossier qui ne contient qu'un film -> c'est le DOSSIER qui est renommé
-    (son contenu suit). Partout ailleurs -> les FICHIERS, avec leurs sous-titres.
-    --dir est parcouru récursivement : un dossier de saga garde son nom, et les
-    films qu'il contient sont renommés un par un.
-  - --pin-id écrit l'identifiant dans le nom ("Dune (2021) [tmdbid-438631]") :
-    les passages suivants n'ont plus rien à chercher, donc plus rien à se tromper.
+  - Un préfixe d'ordre de saga est conservé : "1 - Iron Man" -> "1 - Iron Man (2008)". C'est lui qui devient le numéro dans la collection quand Metadata.py étiquette.
+  - Un dossier qui ne contient qu'un film -> c'est le DOSSIER qui est renommé (son contenu suit). Partout ailleurs -> les FICHIERS, avec leurs sous-titres. --dir est parcouru récursivement : un dossier de saga garde son nom, et les films qu'il contient sont renommés un par un.
+  - --pin-id écrit l'identifiant dans le nom ("Dune (2021) [tmdbid-438631]") : les passages suivants n'ont plus rien à chercher, donc plus rien à se tromper.
   - N'a besoin d'AUCUN outil externe (ni MKVToolNix ni FFmpeg). Juste Internet.
 
 C'est le pendant de TV_Shows/Rename_Episodes.py, et le meilleur moyen de fiabiliser Metadata.py : toute la reconnaissance des films repose sur leur nom.
