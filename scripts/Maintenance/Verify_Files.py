@@ -2,47 +2,33 @@
 r"""
 Verify_Files.py - Contrôle la structure des .mkv d'un dossier, et les répare au besoin.
 
-Un film peut se lire du début à la fin et avoir le conteneur abîmé : la vidéo
-sort, mais la chaîne des éléments Matroska déraille quelque part - typiquement
-une fin de fichier écrite à moitié après une coupure. Ça se manifeste par un
-"erreur dans la structure du fichier Matroska à la position ..." que mkvpropedit
-répète à chaque passage, et par rien d'autre.
+Un film peut se lire du début à la fin et avoir le conteneur abîmé : la vidéo sort, mais la chaîne des éléments Matroska déraille quelque part - typiquement une fin de fichier écrite à moitié après une coupure.
+Ça se manifeste par un "erreur dans la structure du fichier Matroska à la position ..." que mkvpropedit répète à chaque passage, et par rien d'autre.
 
-Rien n'est demandé à MKVToolNix pour juger la structure : mesure faite sur des
-fichiers volontairement cassés, mkvmerge (même en démultiplexant tout vers NUL)
-et mkvinfo se resynchronisent en silence et rendent 0. Seul mkvpropedit
-proteste, mais il ÉCRIT dans le fichier et laisse passer une troncature. La
-chaîne est donc suivie directement (mkvlib/ebml.py), en LECTURE SEULE.
+Rien n'est demandé à MKVToolNix pour juger la structure : mesure faite sur des fichiers volontairement cassés, mkvmerge (même en démultiplexant tout vers NUL) et mkvinfo se resynchronisent en silence et rendent 0.
+Seul mkvpropedit proteste, mais il ÉCRIT dans le fichier et laisse passer une troncature. La chaîne est donc suivie directement (mkvlib/ebml.py), en LECTURE SEULE.
 
-Deux profondeurs, parce qu'une lecture au hasard coûte ~70 ms sur un partage
-réseau et qu'un film de 9 Go compte 2500 clusters :
-  (défaut)   les points de repère - l'index SeekHead, la table Cues, la queue du
-             fichier. Le prix ne dépend pas de la taille du film : ~0,5 s de
-             structure, plus la lecture d'en-tête par mkvmerge qui coûte le
-             double. Mesure faite, 489 films et 4,49 To en 15 minutes. Attrape
-             la troncature, l'index qui ment et les dégâts de fin de fichier,
-             c'est-à-dire ce qui arrive vraiment.
-  --full     toute la chaîne, contenu des clusters compris. Il faut lire le
-             fichier entier : compter ~30 s par gigaoctet sur un partage réseau,
-             donc à réserver à un dossier plutôt qu'a toute une médiathèque.
+Deux profondeurs, parce qu'une lecture au hasard coûte ~70 ms sur un partage réseau et qu'un film de 9 Go compte 2500 clusters :
+  (défaut)   les points de repère - l'index SeekHead, la table Cues, la queue du fichier. Le prix ne dépend pas de la taille du film : ~0,5 s de structure, plus la lecture d'en-tête par mkvmerge qui coûte le double.
+             Mesure faite, 489 films et 4,49 To en 15 minutes. Attrape la troncature, l'index qui ment et les dégâts de fin de fichier, c'est-à-dire ce qui arrive vraiment.
+  --full     toute la chaîne, contenu des clusters compris. Il faut lire le fichier entier : compter ~30 s par gigaoctet sur un partage réseau, donc à réserver à un dossier plutôt qu'a toute une médiathèque.
              Voit tout ce que voit mkvpropedit, plus ce qu'il rate.
 
---repair remultiplexe les fichiers en défaut : mkvmerge relit le film et le
-réécrit proprement à côté, le résultat est contrôle à son tour, et l'original
-n'est remplacé que s'il ressort sain. Rien ne se perd au passage - identifiant
-TMDB, jaquette, titre du segment, nom des pistes et statistiques sont recopiés.
-Au moindre échec l'original reste en place. Il faut la place d'un film de plus
-sur le volume, le temps du remux.
+--repair remultiplexe les fichiers en défaut : mkvmerge relit le film et le réécrit proprement à côté, le résultat est contrôle à son tour, et l'original n'est remplacé que s'il ressort sain.
+Rien ne se perd au passage - identifiant TMDB, jaquette, titre du segment, nom des pistes et statistiques sont recopiés. Au moindre échec l'original reste en place.
+Il faut la place d'un film de plus sur le volume, le temps du remux.
 
 Usage :
   python Verify_Files.py --dir "\\Asgard\films"                 # contrôle rapide
   python Verify_Files.py --dir "\\Asgard\films\Ghibli" --full   # contrôle intégral
   python Verify_Files.py --dir "\\Asgard\films" --repair        # contrôle puis répare
+  python Verify_Files.py --dir "\\Asgard\films" --no-recursive  # cet étage seul
 
-Options : --full --repair --log (défaut : vérification.log à la racine de --dir)
+--no-recursive s'en tient aux .mkv posés directement dans --dir, sans descendre dans les sous-dossiers : de quoi contrôler l'étage d'une médiathèque - les films posés à plat - sans relire les dossiers qu'elle range.
 
-Dépendance EXTERNE : mkvmerge (MKVToolNix). Aucune dépendance pip, aucun accès
-réseau : ce script ne parle qu'aux fichiers.
+Options : --full --repair --no-recursive --log (défaut : vérification.log à la racine de --dir)
+
+Dépendance EXTERNE : mkvmerge (MKVToolNix). Aucune dépendance pip, aucun accès réseau : ce script ne parle qu'aux fichiers.
 """
 
 import argparse
@@ -61,24 +47,22 @@ LARGEUR = 100        # ligne de progression : de quoi tenir dans un terminal ét
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Controle la structure des .mkv d'un dossier (recursivement).")
+    p = argparse.ArgumentParser(description="Controle la structure des .mkv d'un dossier (recursivement par defaut).")
     p.add_argument("--dir", required=True, help="dossier a controler")
-    p.add_argument("--full", action="store_true",
-                   help="suit toute la chaine, clusters compris (lit chaque fichier "
-                        "en entier : ~30 s par Go)")
-    p.add_argument("--repair", action="store_true",
-                   help="remultiplexe les fichiers en defaut et remplace l'original "
-                        "si le resultat est sain")
+    p.add_argument("--full", action="store_true", help="suit toute la chaine, clusters compris (lit chaque fichier en entier : ~30 s par Go)")
+    p.add_argument("--repair", action="store_true", help="remultiplexe les fichiers en defaut et remplace l'original si le resultat est sain")
+    p.add_argument("--no-recursive", action="store_true", help="ne controle que les .mkv poses directement dans --dir, sans descendre dans les sous-dossiers")
     p.add_argument("--log", default=None, help="fichier journal (defaut : verification.log a la racine de --dir)")
     return p.parse_args()
 
 
-def mkv_files(racine):
+def mkv_files(racine, recursif=True):
     """Les .mkv sous racine : ceux posés à la racine d'abord, puis dossier par dossier.
 
-    Le même ordre que la passe de statistiques : on sait tout de suite si la racine est saine, et un dossier se contrôle d'un bloc.
+    Le même ordre que la passe de statistiques : on sait tout de suite si la racine est saine, et un dossier se contrôle d'un bloc. Sans récursion, seuls les films posés directement dans racine sont rendus - l'étage se contrôle sans relire les dossiers qu'il range.
     """
-    return sorted(racine.rglob("*.mkv"), key=lambda p: (p.parent != racine, str(p.parent).lower(), p.name.lower()))
+    fichiers = racine.rglob("*.mkv") if recursif else racine.glob("*.mkv")
+    return sorted(fichiers, key=lambda p: (p.parent != racine, str(p.parent).lower(), p.name.lower()))
 
 
 def readable_size(octets):
@@ -179,11 +163,11 @@ def repair(chemin, complet):
     return True, ""
 
 
-def write_log(destination, racine, total, defauts, repares, echecs, complet):
+def write_log(destination, racine, total, defauts, repares, echecs, complet, recursif=True):
     """Journal du passage : ce qui cloche, et ce qu'on en a fait."""
     lignes = [
         f"Verification du {datetime.now():%d/%m/%Y %H:%M} - {racine}",
-        f"Controle {'complet (chaine entiere)' if complet else 'rapide (points de repere)'}",
+        f"Controle {'complet (chaine entiere)' if complet else 'rapide (points de repere)'}{'' if recursif else ', sans les sous-dossiers'}",
         f"{total} fichier(s) controle(s), {len(defauts)} en defaut.",
         "",
     ]
@@ -213,12 +197,13 @@ def main():
         sys.exit("mkvmerge est introuvable dans le PATH.\n"
                  "  Installe MKVToolNix : winget install MoritzBunkus.MKVToolNix")
 
-    fichiers = mkv_files(racine)
+    fichiers = mkv_files(racine, recursif=not args.no_recursive)
     total = len(fichiers)
+    portee = "dans" if args.no_recursive else "sous"
     if not total:
-        sys.exit(f"Aucun .mkv sous {racine}")
+        sys.exit(f"Aucun .mkv {portee} {racine}")
     octets = sum(f.stat().st_size for f in fichiers)
-    print(f"{total} fichier(s), {readable_size(octets)} sous {racine}")
+    print(f"{total} fichier(s), {readable_size(octets)} {portee} {racine}" + (" (sous-dossiers ignores)" if args.no_recursive else ""))
     print("Controle " + ("complet : toute la chaine, clusters compris "
                          f"(~{readable_time(octets / 1e9 * 30)} de lecture)"
                          if args.full else
@@ -258,7 +243,7 @@ def main():
         print("Le controle rapide ne juge que l'index et la queue : --full "
               "descend dans les clusters.")
 
-    write_log(Path(args.log) if args.log else racine / "verification.log", racine, total, defauts, repares, echecs, args.full)
+    write_log(Path(args.log) if args.log else racine / "verification.log", racine, total, defauts, repares, echecs, args.full, not args.no_recursive)
     return 1 if echecs or (defauts and not args.repair) else 0
 
 

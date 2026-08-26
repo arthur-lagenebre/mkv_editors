@@ -110,9 +110,12 @@ Un `.mkv` peut se lire du début à la fin et avoir le conteneur abîmé — une
 python scripts\Maintenance\Verify_Files.py --dir "D:\Films"                # contrôle rapide
 python scripts\Maintenance\Verify_Files.py --dir "D:\Films\Ghibli" --full  # toute la chaîne, clusters compris
 python scripts\Maintenance\Verify_Files.py --dir "D:\Films" --repair       # contrôle puis remultiplexe
+python scripts\Maintenance\Verify_Files.py --dir "D:\Films" --no-recursive # cet étage seul
 ```
 
 [Verify_Files.py](scripts/Maintenance/Verify_Files.py) suit lui-même la chaîne des éléments EBML, en lecture seule. Par défaut il s'en tient aux points de repère — l'index, la table Cues, la queue du fichier — dont le prix **ne dépend pas de la taille du film** : mesuré sur un partage réseau, 489 films et 4,49 To en 15 minutes (dont les deux tiers passés dans la lecture d'en-tête par `mkvmerge`). `--full` descend dans les clusters, mais lit chaque fichier en entier (compter ~30 s par Go sur un partage réseau) ; il voit alors tout ce que voit `mkvpropedit`, plus la troncature.
+
+`--dir` est parcouru **récursivement**, comme partout ailleurs. `--no-recursive` s'en tient aux `.mkv` posés directement dedans : de quoi contrôler l'étage d'une médiathèque — les films rangés à plat — sans relire les dossiers de films qu'elle contient, ni les repasser après coup un par un.
 
 `--repair` remultiplexe les fichiers en défaut : `mkvmerge` réécrit le film proprement à côté, le résultat est contrôlé à son tour, et l'original n'est remplacé que s'il ressort sain — identifiant TMDB, jaquette, titre du segment, noms de pistes et statistiques sont conservés. Au moindre échec l'original reste en place. Un `verification.log` est écrit à la racine de `--dir`, et le script sort en **code 1** s'il reste un fichier abîmé.
 
