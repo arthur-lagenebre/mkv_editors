@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from scripts.Convertors import Avi_To_Mkv as conversion
+from scripts.Converters import Avi_To_Mkv as conversion
 
 
 def options(**overrides):
