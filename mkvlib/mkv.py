@@ -29,6 +29,19 @@ def run_tool(cmd, **kwargs):
     return subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", **kwargs)
 
 
+def first_error(result):
+    """Première ligne d'erreur d'un outil externe, pour ne pas noyer le bilan.
+
+    Les outils MKVToolNix racontent tout ce qu'ils ont fait avant d'échouer, en anglais ou en français selon la machine : ce qu'on veut afficher, c'est la ligne qui dit pourquoi.
+    """
+    for stream in (result.stderr, result.stdout):
+        for line in (stream or "").splitlines():
+            line = line.strip()
+            if line.lower().startswith(("erreur", "error")):
+                return line
+    return ""
+
+
 def _reason(exc):
     """Message court expliquant l'échec d'un outil externe."""
     if isinstance(exc, subprocess.CalledProcessError):

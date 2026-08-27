@@ -283,6 +283,13 @@ def files_with_ext(folder, extensions):
     except OSError:
         return []
 
+def relative_name(path, root):
+    """Chemin affichable : ce qui distingue le fichier, sans le préfixe commun."""
+    try:
+        return str(Path(path).relative_to(root))
+    except ValueError:                               # hors de la racine (lien, montage)
+        return str(path)
+
 def match_episode(filename, episodes, threshold, by_num=None):
     """(épisode|None, méthode) pour un fichier : par numéro, sinon par titre.
 

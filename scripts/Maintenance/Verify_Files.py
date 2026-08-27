@@ -40,8 +40,8 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # pour importer mkvlib
-from mkvlib import cli, ebml  # noqa: E402
-from mkvlib.mkv import identify, run_tool  # noqa: E402
+from mkvlib import cli, ebml, naming  # noqa: E402
+from mkvlib.mkv import first_error, identify, run_tool  # noqa: E402
 
 LARGEUR = 100         # ligne de progression : de quoi tenir dans un terminal étroit
 SECONDES_PAR_GO = 10  # --full lit le fichier entier : mesuré sur un partage gigabit, qui rend ~110 Mo/s
@@ -83,14 +83,6 @@ def readable_time(secondes):
     return f"{secondes / 3600:.1f} h"
 
 
-def relative_name(chemin, racine):
-    """Chemin affichable : ce qui distingue le fichier, sans le préfixe commun."""
-    try:
-        return str(chemin.relative_to(racine))
-    except ValueError:                              # hors de la racine (lien, montage)
-        return str(chemin)
-
-
 def progress(fait, total, nom):
     """Ligne réécrite sur place. Muette hors terminal : redirigée, elle salirait.
 
@@ -112,16 +104,6 @@ def clear_line():
             print(f"\r{'':<{LARGEUR}}\r", end="")
     except (AttributeError, ValueError):
         pass
-
-
-def first_error(resultat):
-    """Première ligne d'erreur d'un outil externe, pour ne pas noyer le bilan."""
-    for flux in (resultat.stderr, resultat.stdout):
-        for ligne in (flux or "").splitlines():
-            ligne = ligne.strip()
-            if ligne.lower().startswith(("erreur", "error")):
-                return ligne
-    return ""
 
 
 def check(chemin, complet):
@@ -175,7 +157,7 @@ def write_log(destination, racine, total, defauts, repares, echecs, complet, rec
     if not defauts:
         lignes.append("Aucun defaut de structure.")
     for chemin, message in defauts:
-        nom = relative_name(chemin, racine)
+        nom = naming.relative_name(chemin, racine)
         etat = "repare" if nom in repares else ("REPARATION ECHOUEE" if nom in echecs else "non repare")
         lignes += [nom, f"    {message}", f"    -> {etat}", ""]
     if echecs:
@@ -213,11 +195,11 @@ def main():
     defauts = []
     debut = time.time()
     for n, chemin in enumerate(fichiers, 1):
-        progress(n, total, relative_name(chemin, racine))
+        progress(n, total, naming.relative_name(chemin, racine))
         message = check(chemin, args.full)
         if message:
             clear_line()
-            print(f"  [DEFAUT] {relative_name(chemin, racine)}")
+            print(f"  [DEFAUT] {naming.relative_name(chemin, racine)}")
             print(f"           {message}")
             defauts.append((chemin, message))
     clear_line()
@@ -227,7 +209,7 @@ def main():
         print(f"\nReparation de {len(defauts)} fichier(s) : remux, controle du "
               "resultat, puis remplacement.")
         for n, (chemin, _) in enumerate(defauts, 1):
-            nom = relative_name(chemin, racine)
+            nom = naming.relative_name(chemin, racine)
             print(f"  [{n}/{len(defauts)}] {nom} ...", end="", flush=True)
             reussi, souci = repair(chemin, args.full)
             print(" repare" if reussi else f" ECHEC : {souci}")
