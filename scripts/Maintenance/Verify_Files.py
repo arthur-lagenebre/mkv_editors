@@ -11,7 +11,7 @@ Seul mkvpropedit proteste, mais il ÉCRIT dans le fichier et laisse passer une t
 Deux profondeurs, parce qu'une lecture au hasard coûte ~70 ms sur un partage réseau et qu'un film de 9 Go compte 2500 clusters :
   (défaut)   les points de repère - l'index SeekHead, la table Cues, la queue du fichier. Le prix ne dépend pas de la taille du film : ~0,5 s de structure, plus la lecture d'en-tête par mkvmerge qui coûte le double.
              Mesure faite, 489 films et 4,49 To en 15 minutes. Attrape la troncature, l'index qui ment et les dégâts de fin de fichier, c'est-à-dire ce qui arrive vraiment.
-  --full     toute la chaîne, contenu des clusters compris. Il faut lire le fichier entier : compter ~30 s par gigaoctet sur un partage réseau, donc à réserver à un dossier plutôt qu'a toute une médiathèque.
+  --full     toute la chaîne, contenu des clusters compris. Il faut lire le fichier entier : compter ~10 s par gigaoctet sur un partage réseau, donc à réserver à un dossier plutôt qu'a toute une médiathèque.
              Voit tout ce que voit mkvpropedit, plus ce qu'il rate.
 
 --repair remultiplexe les fichiers en défaut : mkvmerge relit le film et le réécrit proprement à côté, le résultat est contrôle à son tour, et l'original n'est remplacé que s'il ressort sain.
@@ -43,13 +43,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # pour importer m
 from mkvlib import cli, ebml  # noqa: E402
 from mkvlib.mkv import identify, run_tool  # noqa: E402
 
-LARGEUR = 100        # ligne de progression : de quoi tenir dans un terminal étroit
+LARGEUR = 100         # ligne de progression : de quoi tenir dans un terminal étroit
+SECONDES_PAR_GO = 10  # --full lit le fichier entier : mesuré sur un partage gigabit, qui rend ~110 Mo/s
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Controle la structure des .mkv d'un dossier (recursivement par defaut).")
     p.add_argument("--dir", required=True, help="dossier a controler")
-    p.add_argument("--full", action="store_true", help="suit toute la chaine, clusters compris (lit chaque fichier en entier : ~30 s par Go)")
+    p.add_argument("--full", action="store_true", help="suit toute la chaine, clusters compris (lit chaque fichier en entier : ~10 s par Go)")
     p.add_argument("--repair", action="store_true", help="remultiplexe les fichiers en defaut et remplace l'original si le resultat est sain")
     p.add_argument("--no-recursive", action="store_true", help="ne controle que les .mkv poses directement dans --dir, sans descendre dans les sous-dossiers")
     p.add_argument("--log", default=None, help="fichier journal (defaut : verification.log a la racine de --dir)")
@@ -205,7 +206,7 @@ def main():
     octets = sum(f.stat().st_size for f in fichiers)
     print(f"{total} fichier(s), {readable_size(octets)} {portee} {racine}" + (" (sous-dossiers ignores)" if args.no_recursive else ""))
     print("Controle " + ("complet : toute la chaine, clusters compris "
-                         f"(~{readable_time(octets / 1e9 * 30)} de lecture)"
+                         f"(~{readable_time(octets / 1e9 * SECONDES_PAR_GO)} de lecture)"
                          if args.full else
                          "rapide : index, table Cues et queue de fichier"))
 
