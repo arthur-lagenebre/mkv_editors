@@ -12,6 +12,7 @@ Outils personnels pour étiqueter une médiathèque à partir de [TMDB](https://
 | [scripts/Movies/Rename_Movies.py](scripts/Movies/Rename_Movies.py) | Renomme les dossiers de films en `Titre (Année)`, avec épinglage de l'id TMDB |
 | [scripts/Maintenance/Verify_Files.py](scripts/Maintenance/Verify_Files.py) | Contrôle la structure Matroska des `.mkv` d'un dossier, et remultiplexe ceux qui sont abîmés |
 | [scripts/Converters/Avi_To_Mkv.py](scripts/Converters/Avi_To_Mkv.py) | Remultiplexe les `.avi` en `.mkv` sans réencodage, sous-titres adjacents compris |
+| [scripts/Converters/Mp4_To_Mkv.py](scripts/Converters/Mp4_To_Mkv.py) | Idem pour les `.mp4`, en gardant les langues de pistes que le fichier déclare déjà |
 
 Les scripts qu'on lance vivent sous [scripts/](scripts/), rangés par domaine ; le reste est interne :
 
@@ -30,7 +31,7 @@ tests/                 les tests
 
 - Python 3.10 ou plus récent
 - [MKVToolNix](https://mkvtoolnix.download) (`mkvpropedit`, `mkvmerge`, `mkvextract`) — obligatoire pour écrire
-- [FFmpeg](https://ffmpeg.org) (`ffprobe`) — facultatif : débit audio dans le nom des pistes, détection des fichiers dont la durée ne correspond pas à l'épisode, et contrôle de la durée après conversion d'un `.avi`
+- [FFmpeg](https://ffmpeg.org) (`ffprobe`) — facultatif : débit audio dans le nom des pistes, détection des fichiers dont la durée ne correspond pas à l'épisode, et contrôle de la durée après conversion d'un `.avi` ou d'un `.mp4`
 
 ```powershell
 winget install MoritzBunkus.MKVToolNix
@@ -119,6 +120,20 @@ Les sous-titres posés à côté sont embarqués au passage, et leur **encodage 
 La **durée** du `.mkv` produit est comparée à celle de la source (`--tolerance`, 2 s par défaut) : c'est ce qui attrape un index AVI qui ment ou un flux mal recopié, que `mkvmerge` ne signale pas toujours. `--delete-source` n'efface l'original qu'après ce contrôle — et réclame donc `ffprobe`. Un `conversion.log` est écrit à la racine de `--dir`, et le script sort en **code 1** s'il reste un fichier non converti.
 
 `--lang` donne la langue des pistes audio (`fre` par défaut, code ISO 639-2 à trois lettres), `--default-audio` et `--default-sub` posent les drapeaux « piste par défaut », `--title` inscrit le nom du fichier comme titre du segment, et `--output-dir` écrit ailleurs qu'à côté de la source. Le `.mkv` obtenu est prêt pour [Metadata.py](scripts/Movies/Metadata.py), qui y écrira le reste.
+
+### Convertir les MP4
+
+Même passe pour les `.mp4`, avec [Mp4_To_Mkv.py](scripts/Converters/Mp4_To_Mkv.py). Un `.mp4` sait porter une jaquette et quelques tags, mais à la mode iTunes : `Metadata.py` écrit des tags **Matroska**, et n'a donc nulle part où les poser tant que le film reste dans ce conteneur. Rien n'est réencodé non plus — les chapitres suivent, la jaquette et les tags iTunes sont laissés derrière, puisque `Metadata.py` les réécrit ensuite depuis TMDB.
+
+```powershell
+python scripts\Converters\Mp4_To_Mkv.py --dir "D:\Films"                          # simulation
+python scripts\Converters\Mp4_To_Mkv.py --dir "D:\Films" --apply                  # convertit
+python scripts\Converters\Mp4_To_Mkv.py --dir "D:\Films" --apply --delete-source  # + efface le .mp4 vérifié
+```
+
+Une différence de fond avec les `.avi` : un `.mp4` **déclare souvent la langue de ses pistes**, là où un `.avi` n'en dit jamais rien. Elle est donc gardée telle quelle, et `--lang` ne sert qu'aux pistes qui n'en ont pas (`und`) — sans quoi un rip anglais correctement étiqueté ressortirait en français. `--force-lang` réétiquette tout, pour un fichier qui se trompe, et le bilan de chaque conversion dit quelles langues ont été conservées.
+
+Les sous-titres **déjà dans le `.mp4`** (tx3g) sont recopiés par `mkvmerge` sans qu'on ait rien à demander, et comptent pour `--subs require` ; ceux posés à côté sont traités exactement comme pour un `.avi`, encodage mesuré fichier par fichier. Le reste est identique — contrôle de durée (`--tolerance`), `--delete-source` après vérification, code de sortie **1** s'il reste un fichier non converti — et le journal s'appelle `conversion_mp4.log`, pour ne pas écraser celui des `.avi` quand les deux passes visent le même dossier. Seule l'extension `.mp4` est prise : un `.m4v` est le même conteneur sous un autre nom, mais le renommer se voit, alors que l'embarquer en silence ne se verrait pas.
 
 ### Vérifier les fichiers
 
