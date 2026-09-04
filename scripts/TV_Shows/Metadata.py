@@ -47,14 +47,14 @@ Options principales :
   --tmdb-id STR    identifiant TMDB (défaut : recherche sur le nom du dossier)
   --language STR   langue TMDB (défaut : fr-FR)
   --no-cache       ignore le cache des réponses TMDB (garde 7 jours) et le rafraîchit
-  --séries-name STR  force le nom de série (sinon auto depuis TMDB)
+  --series-name STR  force le nom de série (sinon auto depuis TMDB)
   --apply          applique réellement (défaut : simulation)
   --verify         vérifie seulement (aucune écriture)
   --skip-done      saute les fichiers déjà conformes
   --no-tag         ne modifie aucun épisode ; genere seulement folder.jpg / récap (séries non-MKV)
   --no-cover / --no-date / --no-audio-names / --no-sub-names / --no-flags / --no-stats
   --artwork        écrit folder.jpg (vignette de dossier) en anglais (série et chaque saison)
-  --récap          genere une fiche récap HTML de la série (onglets par saison)
+  --recap          genere une fiche récap HTML de la série (onglets par saison)
                    -> fichier UNIQUE : les vignettes sont encodées dedans, rien à côté
                    -> les épisodes absents du disque sont grises et comptes par saison
   --image-size STR taille TMDB jaquette / folder.jpg : w300 / w780 / original (défaut : w780)

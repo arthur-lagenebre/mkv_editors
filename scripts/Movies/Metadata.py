@@ -53,14 +53,14 @@ Usage :
   python Metadata.py --dir "D:\Films\Inception (2010)" --tmdb-id 27205 --apply   # force l'id (1 film)
   python Metadata.py --dir "D:\Films" --verify                # vérifie seulement
 
-Options : --apply --verify --skip-done --artwork --récap --no-tag --no-cache --no-ask
+Options : --apply --verify --skip-done --artwork --recap --no-tag --no-cache --no-ask
           --no-saga
           --no-cover --no-date --no-audio-names --no-sub-names --no-flags --no-stats
           --tmdb-id (force, si un seul film) --language (défaut fr-FR) --image-size (w780)
 
 À chaque passage, un JOURNAL est écrit à la racine de --dir : "metadata.log" donne le lien TMDB de chaque film trouve, et groupe en fin de fichier ceux qui n'en ont pas - non associes, ou laissés en attente d'une réponse.
 
---récap genere une fiche HTML de la médiathèque à la racine de --dir : mur d'affiches groupe par saga, avec les films qui MANQUENT à chaque saga (TMDB en connaît la composition).
+--recap genere une fiche HTML de la médiathèque à la racine de --dir : mur d'affiches groupe par saga, avec les films qui MANQUENT à chaque saga (TMDB en connaît la composition).
 Fichier unique, les affiches sont encodées dedans. --no-tag genere les annexes sans rien modifier dans les .mkv.
 """
 
