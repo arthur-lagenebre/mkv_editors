@@ -29,6 +29,18 @@ class TestNomsDePistes(unittest.TestCase):
     def test_audio_canaux_inhabituels(self):
         self.assertEqual(mkv.audio_track_name(piste("audio", codec="DTS", audio_channels=12)), "DTS 12ch")
 
+    def test_audiodescription_etiquetee(self):
+        # "Text descriptions" accompagne souvent le drapeau malvoyant, mais parle de texte : il n'ajoute rien au nom d'une piste audio.
+        tr = piste("audio", codec="E-AC-3", audio_channels=6, flag_visual_impaired=True, flag_text_descriptions=True)
+        tr["_bitrate_kbps"] = 640
+        self.assertEqual(mkv.audio_track_name(tr), "E-AC-3 5.1 640 kb/s AD")
+
+    def test_commentaire_etiquete(self):
+        self.assertEqual(mkv.audio_track_name(piste("audio", codec="AC-3", audio_channels=2, flag_commentary=True)), "AC-3 2.0 Commentary")
+
+    def test_langue_originale_ne_change_pas_le_nom(self):
+        self.assertEqual(mkv.audio_track_name(piste("audio", codec="AAC", audio_channels=2, flag_original=True)), "AAC 2.0")
+
     def test_sous_titres_sans_drapeau(self):
         self.assertEqual(mkv.subtitle_track_name(piste("subtitles")), "Full")
 
@@ -51,6 +63,21 @@ class TestNomsDePistes(unittest.TestCase):
         info = {"tracks": [piste("audio", language="eng"), piste("audio", language="jpn")]}
         audios, _ = mkv.track_selectors(info)
         self.assertEqual(mkv.primary_audio_sel(audios), "a1")
+
+    def test_piste_par_defaut_jamais_l_audiodescription(self):
+        info = {"tracks": [piste("audio", language="fre", flag_visual_impaired=True), piste("audio", language="fre"), piste("audio", language="eng")]}
+        audios, _ = mkv.track_selectors(info)
+        self.assertEqual(mkv.primary_audio_sel(audios), "a2")
+
+    def test_piste_par_defaut_jamais_le_commentaire(self):
+        info = {"tracks": [piste("audio", language="eng", flag_commentary=True), piste("audio", language="eng")]}
+        audios, _ = mkv.track_selectors(info)
+        self.assertEqual(mkv.primary_audio_sel(audios), "a2")
+
+    def test_piste_par_defaut_quand_toutes_sont_etiquetees(self):
+        info = {"tracks": [piste("audio", language="eng", flag_commentary=True), piste("audio", language="fre", flag_visual_impaired=True)]}
+        audios, _ = mkv.track_selectors(info)
+        self.assertEqual(mkv.primary_audio_sel(audios), "a2")
 
 
 FORCE, SDH = "forced_track", "flag_hearing_impaired"
@@ -165,6 +192,11 @@ class TestPistesAmbigues(unittest.TestCase):
     def test_deux_audio_de_meme_langue_et_meme_qualite(self):
         raisons = self.conflits(piste("audio", language="fre", codec="AC-3", audio_channels=6), piste("audio", language="fre", codec="AC-3", audio_channels=6))
         self.assertIn("audio a1 et audio a2 [fr]", raisons[0])
+
+    def test_audiodescription_distincte_de_la_piste_qu_elle_double(self):
+        # L'état exact de Projet Dernière Chance : deux pistes anglaises E-AC-3 5.1 à 640 kb/s, dont une audiodescription que ses drapeaux déclarent. Les deux devenaient "E-AC-3 5.1 640 kb/s", et le film n'était pas traité.
+        ad = piste("audio", language="eng", codec="E-AC-3", audio_channels=6, flag_visual_impaired=True, flag_text_descriptions=True, track_name="Descriptive")
+        self.assertEqual(self.conflits(piste("audio", language="eng", codec="E-AC-3", audio_channels=6), ad), [])
 
     def test_langues_differentes_ne_se_marchent_pas_dessus(self):
         self.assertEqual(self.conflits(piste("audio", language="fre", codec="AC-3", audio_channels=6), piste("audio", language="eng", codec="AC-3", audio_channels=6), piste("subtitles", language="fre", track_name="Français complet"), piste("subtitles", language="eng", track_name="English full")), [])

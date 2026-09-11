@@ -257,16 +257,25 @@ CHANNELS = {1: "1.0", 2: "2.0", 3: "2.1", 4: "4.0", 5: "5.0", 6: "5.1", 7: "6.1"
 # Drapeaux "cochables" d'une piste de sous-titres -> étiquette à mettre dans le nom.
 SUB_FLAGS = [("forced_track", "Forced"), ("flag_hearing_impaired", "SDH"), ("flag_visual_impaired", "AD"), ("flag_text_descriptions", "Text descriptions"), ("flag_commentary", "Commentary"), ("flag_original", "Original")]
 
+# Drapeaux qui font d'une piste audio autre chose que la bande-son du film -> étiquette ajoutée à son nom. Une audiodescription est souvent encodée comme la piste qu'elle double : sans l'étiquette, les deux porteraient le même nom et plus rien ne les distinguerait. Seuls ces deux drapeaux changent ce qu'on entend ; les autres parlent de la langue (Original) ou de sous-titres (Forced, SDH, Text descriptions).
+AUDIO_FLAGS = [("flag_visual_impaired", "AD"), ("flag_commentary", "Commentary")]
+
+
+def audio_flags(track):
+    """Étiquettes des drapeaux AUDIO_FLAGS actifs sur une piste audio."""
+    p = track.get("properties", {})
+    return [label for key, label in AUDIO_FLAGS if p.get(key)]
+
 
 def audio_track_name(track):
-    """Nom "qualité" d'une piste audio : codec + canaux + débit."""
+    """Nom "qualité" d'une piste audio : codec + canaux + débit, puis AD ou Commentary si la piste le déclare."""
     p = track.get("properties", {})
     codec = (track.get("codec") or "").strip()
     ch = p.get("audio_channels")
     layout = CHANNELS.get(ch, f"{ch}ch" if ch else "")
     br = track.get("_bitrate_kbps")
     rate = f"{br} kb/s" if br else ""
-    return " ".join(x for x in (codec, layout, rate) if x)
+    return " ".join(x for x in (codec, layout, rate, *audio_flags(track)) if x)
 
 
 # Le nom d'une piste dit parfois ce que ses drapeaux taisent : "Français force" sur une piste dont flag-forced est absent, "English SDH" sur une piste qui ne se declare pas malentendante. La renommer d'après ses seuls drapeaux effacerait la dernière trace de l'information - on la remet donc là où elle appartient. {motif dans le nom: (drapeau lu par mkvmerge, propriété écrite par mkvpropedit)}
@@ -339,11 +348,15 @@ def is_french(track):
 
 
 def primary_audio_sel(audios):
-    """Piste audio à marquer 'par défaut' : la française, sinon la première."""
-    for sel, tr in audios:
+    """Piste audio à marquer 'par défaut' : la française, sinon la première.
+
+    Une audiodescription ou un commentaire ne l'est jamais tant qu'il reste une piste ordinaire : ce n'est pas la bande-son du film, même quand elle est rangée devant.
+    """
+    candidates = [(sel, tr) for sel, tr in audios if not audio_flags(tr)] or audios
+    for sel, tr in candidates:
         if is_french(tr):
             return sel
-    return audios[0][0] if audios else None
+    return candidates[0][0] if candidates else None
 
 
 def has_cover(info):

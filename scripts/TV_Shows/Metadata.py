@@ -7,9 +7,9 @@ Metadata.py — Étiquette les .mkv d'une série à partir de TMDB (données en 
   - le synopsis, les numéros saison/épisode, réalisateur(s), scénariste(s), casting (tags)
   - les tags de STATISTIQUES de piste (débit, durée, nb d'images)  [--no-stats pour désactiver]
   - la vignette de l'épisode comme jaquette (attachment "cover.jpg")
-  - le nom des pistes AUDIO       -> codec + canaux + débit (ex. "E-AC-3 5.1 640 kb/s")
+  - le nom des pistes AUDIO       -> codec + canaux + débit (ex. "E-AC-3 5.1 640 kb/s"), suivi de AD ou Commentary quand la piste porte le drapeau malvoyant ou commentaire
   - le nom des pistes SOUS-TITRES -> uniquement les drapeaux actifs (Forced, SDH...), ou "Full"
-  - les DRAPEAUX 'par défaut'     -> une seule piste audio par défaut (la FR), aucun sous-titre
+  - les DRAPEAUX 'par défaut'     -> une seule piste audio par défaut (la FR, jamais une audiodescription ni un commentaire), aucun sous-titre
   - les drapeaux FORCED et SDH    -> posés sur un sous-titre dont le NOM les annonce ("Français force", "English SDH") alors que le drapeau manque - sinon, le renommer d'après ses seuls drapeaux effacerait l'information. Une seule piste par langue, et rien dans une langue qui declare déjà le drapeau.  [--no-flags]
 
 => Fichier 100% autonome : toutes les métadonnées voyagent avec le .mkv.
