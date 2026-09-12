@@ -98,6 +98,10 @@ class TestIndicesDuDossier(unittest.TestCase):
         h = album.folder_hints(Path("Kavinsky/2013 - Outrun [mbid-4E5D9F0C-09b6-42bf-b495-e2d7cc288bf6]"))
         self.assertEqual((h.title, h.pinned), ("Outrun", "4e5d9f0c-09b6-42bf-b495-e2d7cc288bf6"))
 
+    def test_identifiant_passe_en_option(self):
+        self.assertEqual(album.parse_mbid(" 4E5D9F0C-09b6-42bf-b495-e2d7cc288bf6 "), "4e5d9f0c-09b6-42bf-b495-e2d7cc288bf6")
+        self.assertIsNone(album.parse_mbid("4e5d9f0c"))
+
 
 class TestIndicesDesTags(unittest.TestCase):
     def test_valeur_la_plus_repandue(self):

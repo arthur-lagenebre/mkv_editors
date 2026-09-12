@@ -12,7 +12,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from musiclib import album as albums
-from musiclib import flac
+from musiclib import flac, lookup
 from scripts.Music import Metadata as music
 from tests.test_album import OUTRUN, sortie
 from tests.test_flac import bloc, fichier, image
@@ -60,22 +60,22 @@ class AlbumTestCase(unittest.TestCase):
         self.dossier = Path(self._tmp.name) / "Kavinsky" / "2013 - Outrun"
         self.dossier.mkdir(parents=True)
 
-    def poser(self, extra_lignes=(), titres=TITRES, images=(), nom_album="Outrun"):
+    def poser(self, extra_lignes=(), titres=TITRES, images=(), nom_album="Outrun", name_pattern="0{n} - {title}.flac"):
         for n, titre in enumerate(titres, 1):
             lignes = [f"TITLE={titre}", f"TRACKNUMBER={n}", f"ALBUM={nom_album}", "ARTIST=Kavinsky", "YEAR=2013", "REPLAYGAIN_TRACK_GAIN=-9.5 dB", *extra_lignes]
-            (self.dossier / f"0{n} - {titre}.flac").write_bytes(fichier(lignes, extra=[(flac.PICTURE, i) for i in images]))
+            (self.dossier / name_pattern.format(n=n, title=titre)).write_bytes(fichier(lignes, extra=[(flac.PICTURE, i) for i in images]))
 
     def trouver(self):
         (seul,) = albums.find_albums(self.dossier.parent)
-        metas, erreurs = music.read_album(seul)
+        metas, erreurs = lookup.read_album(seul)
         self.assertEqual(erreurs, [])
-        return music.Found(seul, metas)
+        return lookup.Found(seul, metas)
 
     def traiter(self, mb, **changes):
         found, args = self.trouver(), arguments(**changes)
         sortie_texte = io.StringIO()
         with redirect_stdout(sortie_texte):
-            release, group = music.fetch_release("rel-1", mb, args)
+            release, group = lookup.fetch_release("rel-1", mb, with_genres=not args.no_genres)
             report = music.process_album(found, release, group, args, mb)
         return report, sortie_texte.getvalue()
 
@@ -166,10 +166,10 @@ class TestTraitementDUnAlbum(AlbumTestCase):
 
 
 class TestResolution(AlbumTestCase):
-    def resoudre(self, mb, **changes):
+    def resoudre(self, mb, **options):
         found = self.trouver()
         with redirect_stdout(io.StringIO()) as sortie_texte:
-            release, _ = music.resolve(found, arguments(**changes), mb, single=True)
+            release, _ = lookup.resolve(found, mb, **options)
         return found, release, sortie_texte.getvalue()
 
     def test_id_lu_dans_les_fichiers_evite_la_recherche(self):
@@ -210,7 +210,7 @@ class TestResolution(AlbumTestCase):
     def test_no_ask_garde_le_premier(self):
         self.poser()
         rivaux = [sortie("rel-1", "OutRun", 3, groupe="rg-1"), sortie("rel-2", "OutRun", 3, groupe="rg-2")]
-        found, release, _ = self.resoudre(FauxMusicBrainz(results=rivaux), no_ask=True)
+        found, release, _ = self.resoudre(FauxMusicBrainz(results=rivaux), ask=False)
         self.assertEqual((release["id"], found.choice), ("rel-1", None))
 
     def test_terminal_non_interactif_ne_bloque_pas(self):

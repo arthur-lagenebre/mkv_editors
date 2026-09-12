@@ -47,88 +47,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # pour importer m
 from mkvlib import cache, cli, naming  # noqa: E402
 from mkvlib.mkv import Report  # noqa: E402
 from musiclib import album as albums  # noqa: E402
-from musiclib import flac  # noqa: E402
+from musiclib import flac, lookup  # noqa: E402
 from musiclib.musicbrainz import COVER_SIZES, MusicBrainz, MusicBrainzError, release_url  # noqa: E402
 
 
 # ----------------------------------------------------------------------------
-# 1. Quel album ?
-# ----------------------------------------------------------------------------
-@dataclass
-class Found:
-    """Un album du disque, ses fichiers lus, et ce qu'on sait de lui."""
-    album: albums.Album
-    metas: dict                                   # {chemin: flac.Metadata}
-    hints: albums.Hints = field(default_factory=albums.Hints)
-    choice: albums.Choice | None = None           # quand une question reste à poser
-
-
-def read_album(album):
-    """({chemin: Metadata}, [erreurs]). Un fichier illisible bloque l'album entier."""
-    metas, errors = {}, []
-    for path in album.files:
-        try:
-            metas[path] = flac.read(path)
-        except flac.FlacError as e:
-            errors.append(f"{path.name} : {e}")
-    return metas, errors
-
-
-def search_queries(album, metas):
-    """[(titre, artiste)] à essayer, les tags d'abord, le nom du dossier ensuite - sans doublon."""
-    tags, folder = albums.tag_hints(list(metas.values())), albums.folder_hints(album.folder)
-    queries = []
-    for title, artist in ((tags.title, tags.artist or folder.artist), (folder.title, folder.artist)):
-        if title and (title, artist) not in queries:
-            queries.append((title, artist))
-    return queries
-
-
-def fetch_release(mbid, mb, args):
-    """(sortie complète, release group avec ses genres). Le release group n'est demandé que pour les genres."""
-    release = mb.release(mbid)
-    group = release.get("release-group") or {}
-    if not args.no_genres and group.get("id"):
-        try:
-            group = mb.release_group(group["id"])
-        except MusicBrainzError as e:
-            print(f"  genres indisponibles : {e}")
-    return release, group
-
-
-def resolve(found, args, mb, single):
-    """(sortie, release group) pour un album, ou (None, None) - avec found.choice rempli si une question reste à poser."""
-    album, metas = found.album, found.metas
-    folder, tags = albums.folder_hints(album.folder), albums.tag_hints(list(metas.values()))
-    found.hints = albums.Hints(tags.artist or folder.artist, tags.title or folder.title, folder.year or tags.year)
-
-    known = [(args.mbid if single else None, "id force par --mbid"), (folder.pinned, "id epingle dans le nom"), (tags.tagged, "id lu dans les fichiers")]
-    mbid, origin = next(((i, o) for i, o in known if i), (None, ""))
-    if mbid:
-        release, group = fetch_release(mbid, mb, args)
-        print(f"  {origin} : {albums.describe(release)}")
-        return release, group
-
-    choice = albums.Choice(reason="nom de dossier et tags inexploitables")
-    for title, artist in search_queries(album, metas):
-        hints = albums.Hints(artist, title, found.hints.year)
-        results = mb.search_releases(title, artist) or mb.search_releases(title, artist, exact=False)
-        choice = albums.choose_release(results, len(album.files), hints, args.country, album.disc_count)
-        if choice.release:
-            print(f"  recherche : '{title}' / '{artist}'" + (f" ({hints.year})" if hints.year else "") + f" -> {albums.describe(choice.release)}")
-            break
-    if choice.release is None:
-        print(f"  [NON ASSOCIE] {choice.reason}")
-        return None, None
-    if choice.rivals and not args.no_ask:
-        found.choice = choice
-        print(f"  [A CONFIRMER] {len(choice.rivals) + 1} albums de ce titre tiennent -> question en fin de passage")
-        return None, None
-    return fetch_release(choice.release["id"], mb, args)
-
-
-# ----------------------------------------------------------------------------
-# 2. Écriture d'un album
+# 1. Écriture d'un album
 # ----------------------------------------------------------------------------
 class CoverCache:
     """La pochette d'un album, téléchargée une fois pour toutes ses pistes, et seulement s'il en faut une.
@@ -225,7 +149,7 @@ def process_album(found, release, group, args, mb):
 
 
 # ----------------------------------------------------------------------------
-# 3. Questions de fin de passage, journal
+# 2. Questions de fin de passage, journal
 # ----------------------------------------------------------------------------
 @dataclass
 class Journal:
@@ -244,44 +168,20 @@ def handle(found, release, group, journal, args, mb):
 
 
 def resolve_pending(pending, journal, args, mb):
-    """Pose les questions mises de côté, puis traite les albums confirmés.
-
-    Comme pour les films, les questions attendent la fin : le script déroule d'abord tout ce qu'il sait faire seul, et n'arbitre qu'ensuite.
-    """
-    print(f"=== {len(pending)} album(s) a confirmer ===")
-    if not cli.can_ask():
-        print("  Terminal non interactif : ces albums sont laisses de cote.")
-        print("  Relance dans un terminal, epingle l'id dans le nom du dossier, ou passe")
-        print("  --no-ask pour accepter le premier resultat sans demander.\n")
-        for found in pending:
-            print(f"  [A CONFIRMER] {found.album.display} -> {albums.describe(found.choice.release)}")
-            journal.note(found.album.display, None, "[A CONFIRMER]")
-        return Report(matched=len(pending), total=len(pending), pending=len(pending))
-
-    print("  Entree = garder le 1er, i = laisser de cote, q = arreter les questions.\n")
-    report, stopped = Report(), False
-    for number, found in enumerate(pending, 1):
-        candidates = [found.choice.release] + found.choice.rivals
-        print(f"[{number}/{len(pending)}] {found.album.display}   (recherche : '{found.hints.title}')")
-        for rank, candidate in enumerate(candidates, 1):
-            print(f"      {rank}) {albums.describe(candidate)}" + ("   (defaut)" if rank == 1 else ""))
-        answer = cli.ASK_SKIP if stopped else cli.ask_choice(len(candidates))
-        if answer == cli.ASK_STOP:
-            stopped, answer = True, cli.ASK_SKIP
-        if answer == cli.ASK_SKIP:
-            print("      [NON TRAITE] album non confirme\n")
+    """Pose les questions mises de côté, puis traite les albums confirmés. Retourne leur Report."""
+    report = Report()
+    for found, chosen in lookup.confirm(pending):
+        if chosen is None:
             report += Report(matched=1, total=1, pending=1)
             journal.note(found.album.display, None, "[A CONFIRMER]")
             continue
-        chosen = candidates[answer]
         try:
-            release, group = fetch_release(chosen["id"], mb, args)
+            release, group = lookup.fetch_release(chosen["id"], mb, with_genres=not args.no_genres)
         except MusicBrainzError as e:
             print(f"      echec MusicBrainz : {e}\n")
             report += Report(total=1)
             journal.note(found.album.display, None, "[ECHEC MUSICBRAINZ]")
             continue
-        print(f"      pour ne plus avoir la question : ajoute ' [mbid-{chosen['id']}]' au nom du dossier")
         report += handle(found, release, group, journal, args, mb)
         print()
     return report
@@ -307,7 +207,7 @@ def write_log(root, journal, args, report):
 
 
 # ----------------------------------------------------------------------------
-# 4. Programme principal
+# 3. Programme principal
 # ----------------------------------------------------------------------------
 def parse_args():
     ap = argparse.ArgumentParser(description="Etiquette des albums .flac depuis MusicBrainz.")
@@ -325,10 +225,10 @@ def parse_args():
     args = ap.parse_args()
     args.country = args.country.upper()
     if args.mbid:
-        found = albums.MBID_RE.search(f"[mbid-{args.mbid.strip()}]")
-        if not found:
+        mbid = albums.parse_mbid(args.mbid)
+        if mbid is None:
             ap.error(f"--mbid attend un identifiant MusicBrainz (8-4-4-4-12 hexadecimaux), pas '{args.mbid}'")
-        args.mbid = found.group(1).lower()
+        args.mbid = mbid
     return args
 
 
@@ -357,7 +257,7 @@ def main():
             continue
         if album.unsupported:
             print(f"  /!\\ {len(album.unsupported)} fichier(s) non .flac ignore(s) : l'album est compte sans eux")
-        metas, errors = read_album(album)
+        metas, errors = lookup.read_album(album)
         if errors:
             print("  [NON TRAITE] fichier(s) illisible(s) :")
             for error in errors:
@@ -367,9 +267,9 @@ def main():
             print()
             continue
 
-        found = Found(album, metas)
+        found = lookup.Found(album, metas)
         try:
-            release, group = resolve(found, args, mb, single=len(writable) == 1)
+            release, group = lookup.resolve(found, mb, forced=args.mbid if len(writable) == 1 else None, country=args.country, ask=not args.no_ask, with_genres=not args.no_genres)
         except MusicBrainzError as e:
             print(f"  echec MusicBrainz : {e}\n")
             report += Report(total=1)

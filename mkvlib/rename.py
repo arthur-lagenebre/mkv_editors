@@ -88,20 +88,20 @@ class Tally:
     """Compte-rendu d'un lot de renommages. Additionnable pour totaliser."""
     named: int = 0          # vidéos déjà au bon nom ou renommées
     total: int = 0          # vidéos vues
-    subtitles: int = 0      # sous-titres renommés avec leur vidéo
+    subtitles: int = 0      # sous-titres (ou paroles) renommés avec leur fichier
 
     def __add__(self, other):
         return Tally(self.named + other.named, self.total + other.total, self.subtitles + other.subtitles)
 
 
-def sidecar_renames(video, new_stem):
-    """[(source, destination), ...] pour les sous-titres posés à côté d'une vidéo.
+def sidecar_renames(video, new_stem, extensions=naming.SUBTITLE_EXTS):
+    """[(source, destination), ...] pour les sous-titres posés à côté d'une vidéo - ou les paroles à côté d'une piste, avec d'autres `extensions`.
 
     Un sous-titre suit sa vidéo s'il porte le même nom : ce qui vient après est conservé tel quel, pour ne pas perdre la langue ni les drapeaux ('S01E02.fr.forced.srt' -> '01 - Titre.fr.forced.srt').
     """
     renames = []
     prefixe = video.stem.lower() + "."
-    for f in naming.files_with_ext(video.parent, naming.SUBTITLE_EXTS):
+    for f in naming.files_with_ext(video.parent, extensions):
         if not f.name.lower().startswith(prefixe):
             continue
         suite = f.name[len(video.stem):]

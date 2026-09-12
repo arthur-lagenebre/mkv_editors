@@ -17,6 +17,7 @@ from mkvlib import naming
 
 AUDIO_EXTS = {".flac"}                     # les formats qu'on sait écrire
 OTHER_AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".ape", ".wv", ".wav", ".aif", ".aiff", ".dsf"}
+LYRICS_EXTS = {".lrc"}                     # paroles posées à côté d'une piste : elles suivent son nom
 
 # Dossier de disque d'un album en plusieurs CD : "CD1", "CD 2", "Disc 2", "Disque 1".
 DISC_DIR_RE = re.compile(r"^(?:cd|dis[ck]|disque)[\s._-]*0*(\d{1,2})$", re.IGNORECASE)
@@ -94,6 +95,12 @@ class Hints:
     year: str = ""
     pinned: str | None = None          # MBID épinglé dans le nom du dossier
     tagged: str | None = None          # MBID que TOUS les fichiers déclarent
+
+
+def parse_mbid(text):
+    """Identifiant MusicBrainz passé en option, en minuscules ; None si `text` n'en est pas un."""
+    found = MBID_RE.search(f"[mbid-{(text or '').strip()}]")
+    return found.group(1).lower() if found else None
 
 
 def folder_hints(folder):

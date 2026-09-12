@@ -11,6 +11,7 @@ Outils personnels pour étiqueter une médiathèque à partir de [TMDB](https://
 | [scripts/Music/Metadata.py](scripts/Music/Metadata.py) | Étiquette des albums `.flac` depuis MusicBrainz : tags à la Picard, identifiants, pochette ; ReplayGain et paroles restent en place |
 | [scripts/TV_Shows/Rename_Episodes.py](scripts/TV_Shows/Rename_Episodes.py) | Renomme les épisodes en `{numéro} - {titre TMDB}.ext`, sous-titres compris |
 | [scripts/Movies/Rename_Movies.py](scripts/Movies/Rename_Movies.py) | Renomme les dossiers de films en `Titre (Année)`, avec épinglage de l'id TMDB |
+| [scripts/Music/Rename_Tracks.py](scripts/Music/Rename_Tracks.py) | Renomme les pistes des albums `.flac` en `{numéro} - {titre MusicBrainz}.flac`, paroles `.lrc` comprises |
 | [scripts/Maintenance/Verify_Files.py](scripts/Maintenance/Verify_Files.py) | Contrôle la structure Matroska des `.mkv` d'un dossier, et remultiplexe ceux qui sont abîmés |
 | [scripts/Converters/Avi_To_Mkv.py](scripts/Converters/Avi_To_Mkv.py) | Remultiplexe les `.avi` en `.mkv` sans réencodage, sous-titres adjacents compris |
 | [scripts/Converters/Mp4_To_Mkv.py](scripts/Converters/Mp4_To_Mkv.py) | Idem pour les `.mp4`, en gardant les langues de pistes que le fichier déclare déjà |
@@ -20,7 +21,7 @@ Les scripts qu'on lance vivent sous [scripts/](scripts/), rangés par domaine ; 
 ```text
 scripts/Movies/        étiquetage et renommage des films
 scripts/TV_Shows/      la même chose pour les séries
-scripts/Music/         étiquetage des albums, depuis MusicBrainz
+scripts/Music/         étiquetage et renommage des albums, depuis MusicBrainz
 scripts/Maintenance/   contrôle et réparation des fichiers, sans rapport avec TMDB
 scripts/Converters/    changement de conteneur, avant tout étiquetage
 mkvlib/                le code commun, et tout ce qui touche aux films et aux séries
@@ -41,7 +42,7 @@ winget install MoritzBunkus.MKVToolNix
 winget install Gyan.FFmpeg
 ```
 
-`Rename_Episodes.py` n'a besoin d'aucun de ces outils : il ne touche qu'aux noms de fichiers. `Music/Metadata.py` non plus : il lit et écrit les `.flac` lui-même, et MusicBrainz ne demande aucune clé.
+`Rename_Episodes.py` et `Rename_Tracks.py` n'ont besoin d'aucun de ces outils : ils ne touchent qu'aux noms de fichiers. `Music/Metadata.py` non plus : il lit et écrit les `.flac` lui-même, et MusicBrainz ne demande aucune clé.
 
 ## Clé TMDB
 
@@ -131,6 +132,15 @@ La pochette est ajoutée aux fichiers qui n'en ont pas : celle de l'édition, à
 L'identifiant de l'édition (`MUSICBRAINZ_ALBUMID`) est inscrit dans chaque fichier et relu au passage suivant. Priorité : `--mbid`, puis l'identifiant épinglé dans le nom du dossier (`2013 - Outrun [mbid-4e5d9f0c-09b6-42bf-b495-e2d7cc288bf6]`), puis celui que **tous** les fichiers déclarent, puis la recherche.
 
 Aucun outil externe : le script lit et écrit lui-même les blocs du `.flac`. Tant que les tags tiennent dans le padding du fichier, seul l'en-tête est réécrit ; sinon — une pochette ajoutée, typiquement — le fichier est recopié à côté puis substitué, et le son ne bouge pas. Mesuré sur une médiathèque de 194 pistes : 167 écritures sur place, 27 recopies (les deux albums sans pochette), le son intact à l'octet près, et un `--verify` qui ne trouve plus rien ensuite ; sur un album recopié en entier, l'empreinte MD5 du son décodé par ffmpeg reste la même. Un fichier déjà conforme n'est jamais réécrit, d'où l'absence de `--skip-done`. MusicBrainz n'accepte qu'une requête par seconde : un premier passage coûte environ trois requêtes par album, les suivants sont servis par le cache. Seuls les `.flac` sont écrits : un dossier de `.mp3` est signalé et laissé tel quel. Le journal `metadata.log` donne le lien MusicBrainz de chaque album.
+
+Pour les noms de fichiers, [Rename_Tracks.py](scripts/Music/Rename_Tracks.py) est le pendant de `Rename_Episodes.py` : chaque piste prend le nom `{numéro} - {titre}.flac` que donne MusicBrainz, le numéro sur autant de chiffres dans tout l'album.
+
+```powershell
+python scripts\Music\Rename_Tracks.py --dir "D:\Musique"                 # simulation
+python scripts\Music\Rename_Tracks.py --dir "D:\Musique" --apply         # renomme
+```
+
+L'album est reconnu exactement comme par `Metadata.py` — mêmes éditions, même placement des fichiers, mêmes questions en fin de passage — et un album dont un seul fichier ne trouve pas sa piste n'est pas renommé du tout. Passé après `Metadata.py`, il ne cherche plus rien : l'identifiant est dans les fichiers. Un album en plusieurs disques rangés à plat préfixe le disque (`2-01 - Alive 1997.flac`) ; rangés dans `CD1`, `CD2`…, chaque dossier repart de `01`. Un `/` dans un titre devient `-` (`Robot Rock - Oh Yeah`), et les paroles `.lrc` posées à côté suivent leur piste. Les dossiers ne bougent pas : leur nom reste celui qu'on leur a donné.
 
 ### Convertir les AVI
 
