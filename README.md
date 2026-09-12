@@ -2,12 +2,13 @@
 
 [![Tests](https://github.com/arthur-lagenebre/mkv_editors/actions/workflows/tests.yml/badge.svg)](https://github.com/arthur-lagenebre/mkv_editors/actions/workflows/tests.yml)
 
-Outils personnels pour étiqueter une médiathèque à partir de [TMDB](https://www.themoviedb.org), en français : les métadonnées sont écrites **directement dans les `.mkv`** (sans ré-encodage ni remux, c'est quasi instantané), pour que chaque fichier reste autonome.
+Outils personnels pour étiqueter une médiathèque à partir de [TMDB](https://www.themoviedb.org) pour les films et les séries, en français, et de [MusicBrainz](https://musicbrainz.org) pour la musique : les métadonnées sont écrites **directement dans les fichiers** — `.mkv`, `.flac` — (sans ré-encodage ni remux, c'est quasi instantané), pour que chaque fichier reste autonome.
 
 | Script | Rôle |
 | --- | --- |
 | [scripts/Movies/Metadata.py](scripts/Movies/Metadata.py) | Étiquette des films : titre, date de sortie **française**, synopsis, casting, genres, jaquette, noms de pistes ; fiche récap de la médiathèque |
 | [scripts/TV_Shows/Metadata.py](scripts/TV_Shows/Metadata.py) | Idem pour une série, saison par saison, plus une fiche récap HTML |
+| [scripts/Music/Metadata.py](scripts/Music/Metadata.py) | Étiquette des albums `.flac` depuis MusicBrainz : tags à la Picard, identifiants, pochette ; ReplayGain et paroles restent en place |
 | [scripts/TV_Shows/Rename_Episodes.py](scripts/TV_Shows/Rename_Episodes.py) | Renomme les épisodes en `{numéro} - {titre TMDB}.ext`, sous-titres compris |
 | [scripts/Movies/Rename_Movies.py](scripts/Movies/Rename_Movies.py) | Renomme les dossiers de films en `Titre (Année)`, avec épinglage de l'id TMDB |
 | [scripts/Maintenance/Verify_Files.py](scripts/Maintenance/Verify_Files.py) | Contrôle la structure Matroska des `.mkv` d'un dossier, et remultiplexe ceux qui sont abîmés |
@@ -19,13 +20,15 @@ Les scripts qu'on lance vivent sous [scripts/](scripts/), rangés par domaine ; 
 ```text
 scripts/Movies/        étiquetage et renommage des films
 scripts/TV_Shows/      la même chose pour les séries
+scripts/Music/         étiquetage des albums, depuis MusicBrainz
 scripts/Maintenance/   contrôle et réparation des fichiers, sans rapport avec TMDB
 scripts/Converters/    changement de conteneur, avant tout étiquetage
-mkvlib/                le code commun
+mkvlib/                le code commun, et tout ce qui touche aux films et aux séries
+musiclib/              ce qui ne sert qu'à la musique
 tests/                 les tests
 ```
 
-[mkvlib/](mkvlib/) porte l'accès TMDB, la lecture/écriture des `.mkv` et l'analyse des noms de fichiers. Aucune dépendance pip : uniquement la bibliothèque standard.
+[mkvlib/](mkvlib/) porte l'accès TMDB, la lecture/écriture des `.mkv` et l'analyse des noms de fichiers, ainsi que ce qui ne dépend d'aucun domaine : cache disque, ligne de commande, bilan d'un passage. [musiclib/](musiclib/) porte l'accès MusicBrainz, la lecture/écriture des `.flac` et la reconnaissance des albums ; il se sert de ces utilitaires communs, jamais de ce qui touche aux films. Aucune dépendance pip : uniquement la bibliothèque standard.
 
 ## Prérequis
 
@@ -38,7 +41,7 @@ winget install MoritzBunkus.MKVToolNix
 winget install Gyan.FFmpeg
 ```
 
-`Rename_Episodes.py` n'a besoin d'aucun de ces outils : il ne touche qu'aux noms de fichiers.
+`Rename_Episodes.py` n'a besoin d'aucun de ces outils : il ne touche qu'aux noms de fichiers. `Music/Metadata.py` non plus : il lit et écrit les `.flac` lui-même, et MusicBrainz ne demande aucune clé.
 
 ## Clé TMDB
 
@@ -52,7 +55,7 @@ C'est la **seule** source : ni variable d'environnement, ni constante dans les s
 
 ## Utilisation
 
-**Tous les scripts démarrent en simulation** : rien n'est écrit tant que `--apply` n'est pas passé. `--verify` (les deux `Metadata.py`) compare l'état des fichiers à TMDB sans rien modifier.
+**Tous les scripts démarrent en simulation** : rien n'est écrit tant que `--apply` n'est pas passé. `--verify` (les `Metadata.py`) compare l'état des fichiers à TMDB sans rien modifier.
 
 ### Films
 
@@ -107,6 +110,28 @@ La série est identifiée par une recherche TMDB sur le nom du dossier (celui du
 
 Un dossier `Specials` (ou `Hors-serie`) est traité comme la saison 0 de TMDB, où vivent les épisodes spéciaux.
 
+### Musique
+
+Un album est un dossier qui contient des `.flac` — lui ou ses dossiers de disque (`CD1`, `CD2`…) ; les dossiers d'artiste au-dessus ne font que ranger. La référence est [MusicBrainz](https://musicbrainz.org), ouvert et **sans clé**, et les pochettes viennent de [Cover Art Archive](https://coverartarchive.org).
+
+```powershell
+python scripts\Music\Metadata.py --dir "D:\Musique"                  # simulation
+python scripts\Music\Metadata.py --dir "D:\Musique" --apply          # applique
+python scripts\Music\Metadata.py --dir "D:\Musique" --verify         # vérifie seulement
+```
+
+L'album est cherché d'après les tags `ALBUM` et `ALBUMARTIST` de ses fichiers, puis d'après le nom du dossier (`1994 - Born Dead`, `Daft Punk - Discovery (2001) FLAC [...]`). Un album existe en autant d'**éditions** qu'il a connu de pressages, et seules comptent celles qui ont **exactement autant de pistes** que le dossier a de fichiers : c'est ce qui départage l'album du single de même nom, le CD de 17 pistes du pressage de 16. Parmi elles, l'édition officielle, en autant de disques que le dossier en range, sur CD ou en numérique plutôt qu'en vinyle — celui de *Human After All* a bien dix pistes, mais en deux faces de cinq —, de l'année annoncée, du pays `--country` (défaut `FR`), à défaut européenne puis mondiale. Deux albums **différents** du même titre qui tiennent tous les deux font l'objet d'une question en fin de passage, comme pour les films.
+
+Chaque fichier est placé sur sa piste par son numéro (tags, dossier de disque, nom de fichier), puis par son titre ; un titre ou une durée qui ne collent pas sont signalés. Un seul fichier sans piste et l'album n'est **pas traité** : à moitié étiqueté, il aurait l'air fait.
+
+Les tags s'écrivent sous les noms qu'emploie [Picard](https://picard.musicbrainz.org) : titre, artistes crédités et noms de tri, numéros et totaux, dates, genres votés, label, catalogue, code-barres, identifiants MusicBrainz. Un album déjà passé par Picard ne diffère en général que par ses genres. **Tout ce qui ne vient pas de MusicBrainz reste en place** : ReplayGain, paroles, notes, ISRC. Une clé n'est gérée que si la base lui donne une valeur — un genre écrit à la main survit à un album sans genre, et `--no-genres` les laisse tous —, sauf celles qui décrivent l'édition (label, code-barres, identifiants), qui mentiraient si elles restaient d'une autre.
+
+La pochette est ajoutée aux fichiers qui n'en ont pas : celle de l'édition, à défaut celle du release group. Une pochette déjà embarquée est gardée ; `--replace-cover` la remplace, `--no-cover` n'en ajoute aucune, `--image-size` choisit `250`, `500`, `1200` (défaut) ou `original`. `--verify` n'exige que la pochette que l'édition déclare : celle du release group peut ne pas exister.
+
+L'identifiant de l'édition (`MUSICBRAINZ_ALBUMID`) est inscrit dans chaque fichier et relu au passage suivant. Priorité : `--mbid`, puis l'identifiant épinglé dans le nom du dossier (`2013 - Outrun [mbid-4e5d9f0c-09b6-42bf-b495-e2d7cc288bf6]`), puis celui que **tous** les fichiers déclarent, puis la recherche.
+
+Aucun outil externe : le script lit et écrit lui-même les blocs du `.flac`. Tant que les tags tiennent dans le padding du fichier, seul l'en-tête est réécrit ; sinon — une pochette ajoutée, typiquement — le fichier est recopié à côté puis substitué, et le son ne bouge pas. Mesuré sur une médiathèque de 194 pistes : 167 écritures sur place, 27 recopies (les deux albums sans pochette), le son intact à l'octet près, et un `--verify` qui ne trouve plus rien ensuite ; sur un album recopié en entier, l'empreinte MD5 du son décodé par ffmpeg reste la même. Un fichier déjà conforme n'est jamais réécrit, d'où l'absence de `--skip-done`. MusicBrainz n'accepte qu'une requête par seconde : un premier passage coûte environ trois requêtes par album, les suivants sont servis par le cache. Seuls les `.flac` sont écrits : un dossier de `.mp3` est signalé et laissé tel quel. Le journal `metadata.log` donne le lien MusicBrainz de chaque album.
+
 ### Convertir les AVI
 
 Un `.avi` ne sait rien porter : ni jaquette, ni synopsis, ni identifiant TMDB. Tant qu'un film reste dans ce conteneur, `Metadata.py` n'a nulle part où écrire — [Avi_To_Mkv.py](scripts/Converters/Avi_To_Mkv.py) fait donc la passe qui précède l'étiquetage. Rien n'est réencodé : les pistes sont recopiées telles quelles, à la vitesse du disque, et l'image comme le son ressortent identiques.
@@ -158,9 +183,9 @@ python scripts\Maintenance\Verify_Files.py --dir "D:\Films" --no-recursive # cet
 
 `--verify` et `--skip-done` comparent aussi **les tags écrits** (synopsis, casting, genres, dates) à ce que TMDB donne aujourd'hui : un fichier étiqueté par une version plus ancienne, ou dont les tags ont été perdus, est signalé au lieu d'être déclaré conforme. Cette relecture coûte un appel à `mkvextract` par fichier, donc elle n'a lieu qu'avec ces deux options.
 
-Les deux `Metadata.py` sortent en **code 1** s'il reste quelque chose à corriger — fichiers non conformes en `--verify`, écritures en échec en `--apply` — et le résument en dernière ligne, de quoi les enchaîner dans un script.
+Les `Metadata.py` sortent en **code 1** s'il reste quelque chose à corriger — fichiers non conformes en `--verify`, écritures en échec en `--apply` — et le résument en dernière ligne, de quoi les enchaîner dans un script.
 
-Les réponses de TMDB sont gardées **7 jours** dans `%LOCALAPPDATA%\mkv_editors\tmdb` (`~/.cache/mkv_editors/tmdb` ailleurs) — jamais à côté de la médiathèque. Repasser sur une grosse collection ne refait donc pas tous les appels : mesuré sur 8 requêtes, 416 ms contre 56 ms. `--no-cache` ignore ce qui est en cache et le rafraîchit ; supprimer le dossier est sans conséquence, il se reconstruit tout seul.
+Les réponses de TMDB et de MusicBrainz sont gardées **7 jours** dans `%LOCALAPPDATA%\mkv_editors\tmdb` et `…\musicbrainz` (`~/.cache/mkv_editors/…` ailleurs) — jamais à côté de la médiathèque. Repasser sur une grosse collection ne refait donc pas tous les appels : mesuré sur 8 requêtes, 416 ms contre 56 ms. `--no-cache` ignore ce qui est en cache et le rafraîchit ; supprimer le dossier est sans conséquence, il se reconstruit tout seul.
 
 `--skip-done` saute ce qui est déjà conforme, `--language` change la langue TMDB (défaut `fr-FR` ; c'est elle qui détermine le pays de la date de sortie retenue pour les films), et les `--no-*` (`--no-cover`, `--no-date`, `--no-audio-names`, `--no-sub-names`, `--no-flags`, `--no-stats`) désactivent chacun une catégorie d'écriture. `--help` liste le reste.
 

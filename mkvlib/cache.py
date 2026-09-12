@@ -14,10 +14,10 @@ from pathlib import Path
 TTL = 7 * 24 * 3600        # une semaine : une fiche TMDB ne change pas plus vite
 DOSSIER = "mkv_editors"
 
-def default_folder():
-    """Emplacement du cache, selon le système."""
+def default_folder(source="tmdb"):
+    """Emplacement du cache, selon le système. Un sous-dossier par service interrogé : une clé de TMDB ne doit jamais pouvoir répondre à MusicBrainz."""
     base = (os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
-    return Path(base) / DOSSIER / "tmdb"
+    return Path(base) / DOSSIER / source
 
 
 class Cache:
@@ -26,8 +26,8 @@ class Cache:
     Toute panne du cache est sans conséquence : une lecture qui echoue est un défaut de cache, une écriture qui echoue est ignorée. Il ne doit jamais empêcher un script de tourner.
     """
 
-    def __init__(self, folder=None, ttl=TTL, read=True):
-        self.folder = Path(folder) if folder else default_folder()
+    def __init__(self, folder=None, ttl=TTL, read=True, source="tmdb"):
+        self.folder = Path(folder) if folder else default_folder(source)
         self.ttl = ttl
         self.read = read            # --no-cache : on n'en lit plus, on le rafraîchit
         self._purged = False
