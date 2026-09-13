@@ -74,6 +74,10 @@ class TestLecture(FlacTestCase):
         self.assertEqual(meta.first("DATE"), "2010")
         self.assertEqual(meta.values("Genre"), ["Electronic", "Synthwave"])
 
+    def test_padding_mesure(self):
+        self.assertEqual(flac.read(self.poser(fichier())).padding, 8192)
+        self.assertEqual(flac.read(self.poser(fichier(padding=None))).padding, 0)
+
     def test_debut_du_son(self):
         donnees = fichier()
         meta = flac.read(self.poser(donnees))
@@ -126,6 +130,21 @@ class TestEcriture(FlacTestCase):
         self.assertTrue(relu.has_front_cover)
         self.assertEqual(chemin.read_bytes()[relu.audio_offset:], SON)
         self.assertEqual(list(self.dossier.glob("*.tmp")), [])      # rien ne traîne à côté
+
+    def test_trop_de_place_vide_force_la_recopie(self):
+        # Mesuré sur Synthesis : 6,98 Mo de padding laissés sur place, et Windows ne lisait plus ni tags ni pochette.
+        chemin, mode, relu = self.ecrire(fichier(padding=flac.MAX_PADDING + 1000), [("TITLE", "Nightcall")])
+        self.assertEqual((mode, relu.padding), ("recopie", flac.DEFAULT_PADDING))
+        self.assertEqual(chemin.read_bytes()[relu.audio_offset:], SON)
+
+    def test_place_vide_a_la_limite_reste_sur_place(self):
+        # Mêmes tags : la place vide reste exactement MAX_PADDING, la limite admise.
+        _, mode, relu = self.ecrire(fichier(padding=flac.MAX_PADDING), [("TITLE", "Nightcall"), ("ARTIST", "Kavinsky")])
+        self.assertEqual((mode, relu.padding), ("sur place", flac.MAX_PADDING))
+
+    def test_un_octet_de_trop_force_la_recopie(self):
+        _, mode, _ = self.ecrire(fichier(padding=flac.MAX_PADDING + 1), [("TITLE", "Nightcall"), ("ARTIST", "Kavinsky")])
+        self.assertEqual(mode, "recopie")
 
     def test_padding_neuf_apres_recopie(self):
         chemin, _, relu = self.ecrire(fichier(padding=None), [("TITLE", "x" * 100)])

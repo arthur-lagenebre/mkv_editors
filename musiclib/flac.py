@@ -17,6 +17,10 @@ STREAMINFO, PADDING, APPLICATION, SEEKTABLE, VORBIS_COMMENT, CUESHEET, PICTURE =
 MAX_BLOCK = (1 << 24) - 1     # la taille d'un bloc tient sur 24 bits
 FRONT_COVER = 3               # type d'image "couverture (recto)" de la spécification
 DEFAULT_PADDING = 8192        # ce que laisse libFLAC : de quoi retoucher les tags plus tard sans tout recopier
+# L'Explorateur de Windows ne lit les métadonnées d'un .flac - tags comme miniature - que si le son commence dans les 4 premiers Mio. Mesuré à l'octet près : 4 194 304 octets d'en-tête s'affichent, 4 198 400 plus du tout, que la place soit prise par du padding ou par une image.
+WINDOWS_HEADER_LIMIT = 4 * 1024 * 1024
+# Au-delà, la place vide ne sert plus et peut nuire : une écriture sur place avait laissé 6,98 Mo de padding dans les pistes de Synthesis, et Windows n'en lisait plus rien. Une écriture sur place qui laisserait plus de place vide recopie donc le fichier, avec un padding normal.
+MAX_PADDING = 64 * 1024
 
 
 class FlacError(Exception):
@@ -46,6 +50,7 @@ class Metadata:
     pictures: list = field(default_factory=list)   # [Picture]
     sample_rate: int = 0
     total_samples: int = 0
+    padding: int = 0                               # octets de PADDING, tous blocs confondus
 
     @property
     def duration(self):
@@ -131,7 +136,7 @@ def read(path):
             if head != MAGIC:
                 cause = " (une etiquette ID3 le precede)" if head[:3] == b"ID3" else ""
                 raise FlacError("ce n'est pas un fichier FLAC" + cause)
-            blocks, offset = [], 4
+            blocks, offset, padding = [], 4, 0
             while True:
                 header = f.read(4)
                 if len(header) < 4:
@@ -139,6 +144,7 @@ def read(path):
                 last, kind, size = header[0] & 0x80, header[0] & 0x7F, int.from_bytes(header[1:], "big")
                 offset += 4 + size
                 if kind == PADDING:
+                    padding += size
                     f.seek(size, os.SEEK_CUR)
                 else:
                     body = f.read(size)
@@ -152,7 +158,7 @@ def read(path):
 
     if not blocks or blocks[0][0] != STREAMINFO:
         raise FlacError("STREAMINFO absent en tete du fichier")
-    meta = Metadata(blocks, offset)
+    meta = Metadata(blocks, offset, padding=padding)
     meta.sample_rate, meta.total_samples = parse_streaminfo(blocks[0][1])
     for kind, body in blocks:
         if kind == VORBIS_COMMENT:
@@ -228,12 +234,13 @@ def render(meta, comments, pictures, padding):
 def write(path, meta, comments, pictures):
     """Remplace les tags et les images d'un .flac. Retourne "sur place" ou "recopie".
 
-    `meta` doit être la lecture du fichier tel qu'il est : c'est elle qui dit où commence le son. Sur place, seul l'en-tête est réécrit, à taille identique - le padding absorbe la différence. Sinon le fichier est recopié à côté avec un padding neuf, sa taille contrôlée, et il ne remplace l'original qu'une fois complet : une coupure en route laisse l'original intact.
+    `meta` doit être la lecture du fichier tel qu'il est : c'est elle qui dit où commence le son. Sur place, seul l'en-tête est réécrit, à taille identique - le padding absorbe la différence, tant qu'elle ne dépasse pas MAX_PADDING. Sinon le fichier est recopié à côté avec un padding neuf, sa taille contrôlée, et il ne remplace l'original qu'une fois complet : une coupure en route laisse l'original intact.
     """
     path = Path(path)
     bare = len(render(meta, comments, pictures, None))
     room = meta.audio_offset - bare
-    if room == 0 or room >= 4:                     # un bloc PADDING coûte au moins son en-tête de 4 octets
+    # Un bloc PADDING coûte au moins son en-tête de 4 octets ; plus de MAX_PADDING de place vide, et Windows ne lirait plus rien.
+    if room == 0 or 4 <= room <= MAX_PADDING + 4:
         header = render(meta, comments, pictures, room - 4 if room else None)
         try:
             with open(path, "r+b") as f:

@@ -156,6 +156,24 @@ class TestTraitementDUnAlbum(AlbumTestCase):
         report, _ = self.traiter(mb, verify=True)
         self.assertEqual(report.diffs, 0)
 
+    def test_en_tete_illisible_par_windows_repare(self):
+        # Mesuré sur Synthesis : 6,98 Mo de padding laissés par une écriture sur place, et l'Explorateur ne lisait plus ni tags ni pochette.
+        self.poser()
+        mb = FauxMusicBrainz()
+        self.traiter(mb)
+        chemin = self.dossier / "01 - Prelude.flac"
+        meta = flac.read(chemin)
+        chemin.write_bytes(flac.render(meta, meta.comments, meta.pictures, flac.WINDOWS_HEADER_LIMIT) + chemin.read_bytes()[meta.audio_offset:])
+
+        report, sortie_texte = self.traiter(mb, verify=True)
+        self.assertEqual(report.diffs, 1)
+        self.assertIn("illisible pour l'Explorateur Windows", sortie_texte)
+        _, sortie_texte = self.traiter(mb)
+        self.assertIn("[OK] recopie", sortie_texte)
+        self.assertEqual(self.relire().padding, flac.DEFAULT_PADDING)
+        report, _ = self.traiter(mb, verify=True)
+        self.assertEqual(report.diffs, 0)
+
     def test_un_fichier_en_trop_bloque_tout_l_album(self):
         self.poser(titres=("Prelude", "Blizzard", "Protovision", "Bonus inconnu"))
         avant = [f.read_bytes() for f in sorted(self.dossier.iterdir())]

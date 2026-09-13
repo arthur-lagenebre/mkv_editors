@@ -108,23 +108,29 @@ def process_album(found, release, group, args, mb):
         wants_cover = not args.no_cover and covers.possible and (args.replace_cover or not meta.has_front_cover)
         # --verify n'exige que la pochette que la sortie déclare : celle du release group n'existe peut-être pas, et l'exiger signalerait un écart que rien ne comble.
         missing_cover = not args.no_cover and covers.own and not meta.has_front_cover
+        # L'Explorateur de Windows ne lit rien d'un en-tête de plus de 4 Mio : quand c'est le padding qui l'enfle, recopier le fichier suffit à le rendre lisible.
+        shrink = meta.audio_offset > flac.WINDOWS_HEADER_LIMIT and meta.padding > flac.MAX_PADDING
 
         name = naming.relative_name(entry.path, album.folder)       # CD1/ et CD2/ se distinguent
         print(f"  [{medium.get('position')}-{track.get('position'):02d}] {name} -> {track.get('title')}")
         for note in albums.entry_notes(entry, track):
             print(f"      /!\\ {note}")
+        if meta.audio_offset - meta.padding > flac.WINDOWS_HEADER_LIMIT:
+            print(f"      /!\\ en-tete de {(meta.audio_offset - meta.padding) / 1048576:.1f} Mo sans le padding : l'Explorateur Windows n'en lit rien (--replace-cover remplace la pochette)")
         if args.verify:
             for key, current, wanted in diffs:
                 print(f"      [DIFF] {key} : {', '.join(current) or '(absent)'} -> {', '.join(wanted) or '(retire)'}")
             if missing_cover:
                 print("      [DIFF] pochette : absente")
-            if diffs or missing_cover:
+            if shrink:
+                print(f"      [DIFF] en-tete : {meta.audio_offset / 1048576:.1f} Mo dont {meta.padding / 1048576:.1f} Mo de padding, illisible pour l'Explorateur Windows")
+            if diffs or missing_cover or shrink:
                 report.diffs += 1
             else:
                 print("      [OK] deja conforme")
             continue
 
-        changes = ([f"{len(diffs)} tag(s) : " + ", ".join(k for k, _, _ in diffs[:6]) + (" ..." if len(diffs) > 6 else "")] if diffs else []) + ([covers.label] if wants_cover else [])
+        changes = ([f"{len(diffs)} tag(s) : " + ", ".join(k for k, _, _ in diffs[:6]) + (" ..." if len(diffs) > 6 else "")] if diffs else []) + ([covers.label] if wants_cover else []) + (["padding a retirer (en-tete illisible par Windows)"] if shrink else [])
         if not changes:
             print("      deja conforme")
             continue
@@ -137,7 +143,7 @@ def process_album(found, release, group, args, mb):
             cover = covers.get()
             if cover is not None:
                 pictures = [cover] + [p for p in meta.pictures if p.kind != flac.FRONT_COVER]
-            elif not diffs:
+            elif not diffs and not shrink:
                 continue
         try:
             mode = flac.write(entry.path, meta, albums.merge(meta.comments, target), pictures)
