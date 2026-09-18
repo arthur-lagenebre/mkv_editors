@@ -1,6 +1,8 @@
 # mkv_editors
 
 [![Tests](https://github.com/arthur-lagenebre/mkv_editors/actions/workflows/tests.yml/badge.svg)](https://github.com/arthur-lagenebre/mkv_editors/actions/workflows/tests.yml)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org)
+[![Généré par Claude Code](https://img.shields.io/badge/G%C3%A9n%C3%A9r%C3%A9%20par-Claude%20Code-D97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
 
 Outils personnels pour étiqueter une médiathèque à partir de [TMDB](https://www.themoviedb.org) pour les films et les séries, en français, et de [MusicBrainz](https://musicbrainz.org) pour la musique : les métadonnées sont écrites **directement dans les fichiers** — `.mkv`, `.flac` — (sans ré-encodage ni remux, c'est quasi instantané), pour que chaque fichier reste autonome.
 
@@ -107,7 +109,7 @@ Les sous-titres posés à côté d'une vidéo (`.srt`, `.ass`, `.idx`/`.sub`…)
 
 La série est identifiée par une recherche TMDB sur le nom du dossier (celui du parent si `--dir` pointe sur une saison) : le résultat retenu est affiché, et les cas douteux — reboot portant le même nom, titre éloigné de la recherche — sont signalés. `--tmdb-id 1234` force l'identifiant quand la recherche se trompe ou ne trouve rien — et pour que ce soit **durable**, écris-le dans le nom du dossier : `Ma Serie [tmdbid-1396]` (ou `{tmdb-1396}`). Même chose côté films : `Dune (2021) [tmdbid-438631]`.
 
-`--recap` produit un `recap.html` unique (onglets par saison, vignettes encodées dans la page : rien à conserver à côté). Les épisodes dont TMDB n'a pas de vignette reprennent l'affiche de leur saison (à défaut, celle de la série), encodée une seule fois pour toute la page. Les épisodes absents du disque y sont grisés et étiquetés, avec un compteur par saison — l'inventaire se lit dans les noms de fichiers, tous formats vidéo confondus, donc il reste juste même avec `--no-tag`. `--artwork` écrit les `folder.jpg` (affiche anglaise) de la série et de chaque saison. `--no-tag` génère ces annexes sans toucher aux épisodes, pour une série qui n'est pas en `.mkv`.
+`--recap` produit un `recap.html` unique (onglets par saison, vignettes encodées dans la page : rien à conserver à côté). Les épisodes dont TMDB n'a pas de vignette reprennent l'affiche de leur saison (à défaut, celle de la série), encodée une seule fois pour toute la page. Les épisodes absents du disque y sont grisés et étiquetés, avec un compteur par saison — l'inventaire se lit dans les noms de fichiers, tous formats vidéo confondus, donc il reste juste même avec `--no-tag`. Un dernier onglet **Casting** rassemble les acteurs vus dans plusieurs saisons, puis, saison par saison, ceux qui n'appartiennent qu'à elle — ce qui rend lisible une série longue dont la distribution change (`--cast-limit` plafonne chaque section, 20 par défaut ; une saison en crédite facilement une centaine). `--artwork` écrit les `folder.jpg` (affiche anglaise) de la série et de chaque saison. `--no-tag` génère ces annexes sans toucher aux épisodes, pour une série qui n'est pas en `.mkv`.
 
 Un dossier `Specials` (ou `Hors-serie`) est traité comme la saison 0 de TMDB, où vivent les épisodes spéciaux.
 
