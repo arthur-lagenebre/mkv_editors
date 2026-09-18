@@ -13,6 +13,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.Movies import Metadata as films
+from scripts.TV_Shows import Metadata as series
 from scripts.TV_Shows import Rename_Episodes as rename
 
 class FauxTmdb:
@@ -39,6 +40,28 @@ class FauxTmdb:
     def season(self, show_id, season_number, language=None):
         self.saisons.append(season_number)
         return {"season_number": season_number, "episodes": [{"episode_number": 1, "name": "Special"}]}
+
+
+class FauxTmdbSerie(FauxTmdb):
+    """Une série d'une saison, avec son casting cumule."""
+
+    def __init__(self):
+        super().__init__()
+        self.castings = []
+
+    def series(self, show_id, language=None):
+        return {"id": show_id, "name": "Ma Serie", "overview": "Resume", "poster_path": "/serie.jpg"}
+
+    def season(self, show_id, season_number, language=None):
+        self.saisons.append(season_number)
+        return {"season_number": season_number, "name": f"Saison {season_number}",
+                "episodes": [{"episode_number": 1, "name": "Pilote", "still_path": "/s1.jpg"}]}
+
+    def aggregate_credits(self, show_id, season_number=None, language=None):
+        self.castings.append(season_number)
+        return {"cast": [{"id": 7, "name": "A. Acteur", "profile_path": "/a.jpg", "order": 0,
+                          "total_episode_count": 1,
+                          "roles": [{"character": "Lui-meme", "episode_count": 1}]}]}
 
 
 class FluxTestCase(unittest.TestCase):
@@ -89,6 +112,35 @@ class TestAnnexesDesFilms(FluxTestCase):
     def test_recap_ecrit_sous_no_tag(self):
         self.lancer_films("--no-tag", "--recap", "--apply")
         self.assertTrue((self.racine / "recap.html").exists())
+
+
+class TestAnnexesDesSeries(FluxTestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.racine = Path(self._tmp.name)
+        saison = self.racine / "Saison 1"
+        saison.mkdir()
+        (saison / "01 - Pilote.mkv").write_text("x", encoding="utf-8")
+        self.addCleanup(self._tmp.cleanup)
+
+    def lancer_serie(self, *options):
+        with mock.patch.object(series.mkv, "check_tools", lambda **k: False):
+            return self.lancer(series, ["--dir", str(self.racine), "--tmdb-id", "42",
+                                        "--no-tag", *options], tmdb=FauxTmdbSerie())
+
+    def test_le_recap_porte_l_onglet_casting(self):
+        tmdb, _ = self.lancer_serie("--recap", "--apply")
+        html = (self.racine / "recap.html").read_text(encoding="utf-8")
+        self.assertEqual(tmdb.castings, [1])            # une saison, un appel
+        self.assertIn("data-s='cast'", html)
+        self.assertIn("A. Acteur", html)
+        self.assertIn("<img data-img='w185/a.jpg'", html)
+
+    def test_la_simulation_n_interroge_pas_le_casting(self):
+        tmdb, sortie = self.lancer_serie("--recap")
+        self.assertEqual(tmdb.castings, [])
+        self.assertFalse((self.racine / "recap.html").exists())
+        self.assertIn("ecrirait recap.html", sortie)
 
 
 class TestDoublons(FluxTestCase):

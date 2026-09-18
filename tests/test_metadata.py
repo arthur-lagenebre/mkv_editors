@@ -11,7 +11,7 @@ from unittest import mock
 from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from mkvlib import lookup, mkv, naming
+from mkvlib import cast, lookup, mkv, naming
 from mkvlib.tmdb import TmdbError
 from scripts.Movies import Metadata as films
 from scripts.TV_Shows import Metadata as series
@@ -365,6 +365,96 @@ class TestRepliDeVignette(unittest.TestCase):
         run = series.SeasonRun(Path("."), 1, self.saison(), {1, 2})
         html = series.build_recap_html("S", {}, [run], "1", {}, "w300")
         self.assertEqual(html.count("<div class='noimg'></div>"), 2)
+
+
+class TestOngletCasting(unittest.TestCase):
+    """Dernier onglet de la fiche : les récurrents, puis les acteurs propres à une saison."""
+
+    def entree(self, person, name, episodes=1, profile=None):
+        return {"id": person, "name": name, "profile_path": profile, "order": 0,
+                "total_episode_count": episodes,
+                "roles": [{"character": "Le role", "episode_count": episodes}]}
+
+    def rendre(self, casts, images=None, runs=None):
+        casting = cast.split(casts)
+        runs = runs or [series.SeasonRun(Path("."), n, {"season_number": n, "name": f"Saison {n}", "episodes": []}, set()) for n, _ in casts]
+        return series.build_recap_html("S", {}, runs, "1", images or {}, "w300", casting)
+
+    def test_l_onglet_vient_en_dernier(self):
+        html = self.rendre([(1, [self.entree(7, "Alice")]), (2, [self.entree(7, "Alice")])])
+        self.assertLess(html.index("data-s='2'"), html.index("data-s='cast'"))
+        self.assertIn("<button class='tab' data-s='cast'>Casting</button>", html)
+        self.assertIn("<section class='season cast' data-s='cast' hidden>", html)
+
+    def test_sans_casting_aucun_onglet(self):
+        html = series.build_recap_html("S", {}, [], "1", {}, "w300", cast.Casting())
+        self.assertNotIn("data-s='cast'", html)
+
+    def test_recurrents_puis_saisons(self):
+        html = self.rendre([(1, [self.entree(7, "Alice"), self.entree(9, "Invite")]),
+                            (2, [self.entree(7, "Alice")])])
+        self.assertIn("<h2>Acteurs récurrents</h2>", html)
+        self.assertLess(html.index("Acteurs récurrents"), html.index("<h2>Saison 1</h2>"))
+        self.assertIn("Alice", html)
+        self.assertIn("Invite", html)
+
+    def test_une_seule_saison_n_oppose_rien(self):
+        html = self.rendre([(1, [self.entree(7, "Alice")])])
+        self.assertIn("<h2>Casting</h2>", html)
+        self.assertNotIn("Acteurs récurrents", html)
+        self.assertNotIn("class='note'", html)          # rien à expliquer
+
+    def test_les_saisons_gardent_le_nom_de_TMDB(self):
+        runs = [series.SeasonRun(Path("."), 0, {"season_number": 0, "name": "Specials", "episodes": []}, set()),
+                series.SeasonRun(Path("."), 1, {"season_number": 1, "name": "Saison 1", "episodes": []}, set())]
+        html = self.rendre([(0, [self.entree(9, "Invite")]), (1, [self.entree(7, "Alice")])], runs=runs)
+        self.assertIn("<h2>Specials</h2>", html)
+
+    def test_portrait_integre_et_manquant(self):
+        html = self.rendre([(1, [self.entree(7, "Alice", profile="/a.jpg"), self.entree(9, "Invite")])],
+                           images={"w185/a.jpg": "data:image/jpeg;base64,AAA"})
+        self.assertIn("<img data-img='w185/a.jpg' src='data:image/jpeg;base64,AAA'", html)
+        self.assertEqual(html.count("<div class='noimg'></div>"), 1)
+
+    def test_noms_echappes(self):
+        html = self.rendre([(1, [self.entree(7, "Tom & <b>Jerry</b>")])])
+        self.assertIn("Tom &amp; &lt;b&gt;Jerry&lt;/b&gt;", html)
+
+    def test_portraits_a_telecharger(self):
+        casting = cast.split([(1, [self.entree(7, "Alice", profile="/a.jpg"), self.entree(9, "Invite")])])
+        self.assertEqual(series.collect_profiles(casting, "w185"), {"w185/a.jpg": "/a.jpg"})
+
+
+class TestCollecteDuCasting(unittest.TestCase):
+    """Interrogation de TMDB : une saison par appel, et un echec n'emporte pas la fiche."""
+
+    class Tmdb:
+        def __init__(self, echecs=()):
+            self.echecs = set(echecs)
+            self.appels = []
+
+        def aggregate_credits(self, show_id, season_number=None, language=None):
+            self.appels.append((show_id, season_number))
+            if season_number in self.echecs:
+                raise TmdbError("panne")
+            return {"cast": [{"id": 7, "name": f"Acteur S{season_number}", "roles": []}]}
+
+    def collecter(self, echecs=()):
+        runs = [series.SeasonRun(Path("."), n, {"season_number": n, "episodes": []}, set()) for n in (1, 2)]
+        args = types.SimpleNamespace(tmdb_id="42")
+        tmdb = self.Tmdb(echecs)
+        with redirect_stdout(io.StringIO()) as sortie:
+            return series.collect_cast(runs, args, tmdb), tmdb, sortie.getvalue()
+
+    def test_une_requete_par_saison(self):
+        casts, tmdb, _ = self.collecter()
+        self.assertEqual(tmdb.appels, [("42", 1), ("42", 2)])
+        self.assertEqual([n for n, _ in casts], [1, 2])
+
+    def test_une_saison_en_echec_est_sautee(self):
+        casts, _, sortie = self.collecter(echecs=(1,))
+        self.assertEqual([n for n, _ in casts], [2])
+        self.assertIn("casting de la saison 1 ignore", sortie)
 
 
 class FauxTmdb:

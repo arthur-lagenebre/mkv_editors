@@ -156,6 +156,14 @@ class Tmdb:
         """Données d'une saison, MÊME structure qu'un export JSON TMDB."""
         return self.get(f"tv/{show_id}/season/{season_number}", language)
 
+    def aggregate_credits(self, show_id, season_number=None, language=None):
+        """Casting cumulé d'une série entière, ou d'une seule de ses saisons.
+
+        /credits ne donne que la distribution principale déclarée ; /aggregate_credits totalise ce que CHAQUE épisode crédite, avec le nombre d'épisodes par rôle - c'est ce qui permet de distinguer un acteur récurrent d'un invité d'un soir.
+        """
+        scope = f"tv/{show_id}" + (f"/season/{season_number}" if season_number is not None else "")
+        return self.get(f"{scope}/aggregate_credits", language)
+
     # ---------------------------------------------------------------- Images
     def image(self, image_path, size):
         """Télécharge une image TMDB et retourne ses octets.

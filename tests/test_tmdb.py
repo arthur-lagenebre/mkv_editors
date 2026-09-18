@@ -85,6 +85,19 @@ class TestRequetes(ClientTestCase):
         _, reqs = self.call([FakeResponse(b"{}")], methode="series", args=(1, "en-US"))
         self.assertIn("language=en-US", reqs[0].full_url)
 
+    def test_casting_cumule_de_la_serie(self):
+        _, reqs = self.call([FakeResponse(b"{}")], methode="aggregate_credits", args=(1396,))
+        self.assertIn("tv/1396/aggregate_credits", reqs[0].full_url)
+
+    def test_casting_cumule_d_une_saison(self):
+        _, reqs = self.call([FakeResponse(b"{}")], methode="aggregate_credits", args=(1396, 2))
+        self.assertIn("tv/1396/season/2/aggregate_credits", reqs[0].full_url)
+
+    def test_le_casting_des_speciaux_n_est_pas_celui_de_la_serie(self):
+        # Tester la saison 0 comme un booleen renverrait le casting de toute la serie.
+        _, reqs = self.call([FakeResponse(b"{}")], methode="aggregate_credits", args=(1396, 0))
+        self.assertIn("tv/1396/season/0/aggregate_credits", reqs[0].full_url)
+
 
 class TestErreurs(ClientTestCase):
     def test_cle_refusee_arrete_tout(self):
