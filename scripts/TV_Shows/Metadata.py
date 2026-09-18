@@ -393,9 +393,9 @@ def build_recap_html(series_name, show, runs, tmdb_id, images, size, casting=Non
         ".ep{display:flex;gap:16px;padding:14px 0;border-bottom:1px solid #21232b}"
         ".ep img,.ep .noimg{width:160px;height:90px;object-fit:cover;border-radius:8px;"
         "background:#21232b;flex:none}"
-        # Emplacement de repli : une affiche est en portrait, donc contenue plutôt que rognée en bandeau. 'background-color' et non le raccourci 'background', qui effacerait l'image posée par la règle de chaque affiche.
+        # Emplacement de repli : l'affiche est en portrait, recadrée en 16/9 comme une vignette. Le cadrage est pris aux trois dixièmes du haut, pas au centre : une affiche place ses personnages dans sa moitié haute et son titre en bas, et un cadrage centre les coupe tous à la taille. 'background-color' et non le raccourci 'background', qui effacerait l'image posée par la règle de chaque affiche.
         ".ep .fb{width:160px;height:90px;border-radius:8px;flex:none;"
-        "background-color:#21232b;background-size:contain;background-position:center;"
+        "background-color:#21232b;background-size:cover;background-position:center 30%;"
         "background-repeat:no-repeat}"
         + "".join(embed.shared_rule(cle, uri) for cle, uri in partagees.items()) +
         ".ep.absent{opacity:.42}"
