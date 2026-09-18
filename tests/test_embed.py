@@ -50,6 +50,12 @@ class TestCache(unittest.TestCase):
         html = "<img data-still='w300/b.jpg' src='data:image/jpeg;base64,BBB'>"
         self.assertEqual(self.relire(html), {"w300/b.jpg": "data:image/jpeg;base64,BBB"})
 
+    def test_image_partagee_relue_depuis_la_regle_css(self):
+        # L'affiche de repli d'une saison n'est ecrite qu'une fois, en CSS : sans ca, regenerer la fiche la retelechargerait a chaque passage.
+        html = ("<style>" + embed.shared_rule("w300/c.jpg", "data:image/jpeg;base64,CCC")
+                + "</style>" + embed.shared_slot("w300/c.jpg", "fb"))
+        self.assertEqual(self.relire(html), {"w300/c.jpg": "data:image/jpeg;base64,CCC"})
+
     def test_fiche_absente(self):
         self.assertEqual(embed.read_embedded(Path("nexiste_pas.html")), {})
 

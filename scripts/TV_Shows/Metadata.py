@@ -57,6 +57,7 @@ Options principales :
   --recap          genere une fiche récap HTML de la série (onglets par saison)
                    -> fichier UNIQUE : les vignettes sont encodées dedans, rien à côté
                    -> les épisodes absents du disque sont grises et comptes par saison
+                   -> un épisode dont TMDB n'a pas de vignette reprend l'affiche de sa saison
   --image-size STR taille TMDB jaquette / folder.jpg : w300 / w780 / original (défaut : w780)
   --still-size STR taille TMDB des vignettes du récap (défaut : w300)
 """
@@ -229,27 +230,39 @@ def process_season(mkv_dir, season, args, opts, tmdb):
 # ----------------------------------------------------------------------------
 # 3. Fiche récap HTML : vignettes encodées dans la page
 # ----------------------------------------------------------------------------
-def collect_stills(runs, size):
-    """Retourne {clé: chemin TMDB} pour toutes les vignettes d'épisode disponibles."""
+def episode_image(ep, run, show):
+    """Image d'un épisode dans la fiche : sa vignette, sinon l'affiche de la saison, sinon celle de la série.
+
+    TMDB ne fournit pas de vignette pour tous les épisodes (séries peu documentées, saisons récentes) : une saison entière peut n'en avoir aucune. Une affiche répétée dit au moins de quelle saison il s'agit, là où une case vide ne dit rien. Retourne (chemin TMDB, repli ?).
+    """
+    still = ep.get("still_path")
+    if still:
+        return still, False
+    return run.data.get("poster_path") or show.get("poster_path"), True
+
+
+def collect_stills(runs, show, size):
+    """Retourne {clé: chemin TMDB} pour toutes les images de la fiche, replis compris."""
     needed = {}
     for run in runs:
         for ep in run.episodes:
-            key = embed.image_key(ep.get("still_path"), size)
+            path, _ = episode_image(ep, run, show)
+            key = embed.image_key(path, size)
             if key:
-                needed[key] = ep["still_path"]
+                needed[key] = path
     return needed
 
 
 def build_recap_html(series_name, show, runs, tmdb_id, stills, size):
     """Rend la page HTML (pur rendu : ni réseau ni disque).
 
-    'stills' = {clé: data-URI} ; un épisode sans vignette disponible reçoit un emplacement vide plutôt qu'une balise <img> sans source.
+    'stills' = {clé: data-URI} ; un épisode sans vignette propre retombe sur l'affiche de sa saison (voir episode_image), et n'a un emplacement vide que si celle-ci manque aussi. Une affiche de repli revient sur beaucoup d'épisodes : elle est écrite une seule fois, dans une règle CSS, et non recopiée dans chaque balise.
 
     Les épisodes absents du disque sont grises et étiquetés, avec un compteur par saison. Une saison dont on ne connaît aucun fichier n'est pas marquée du tout : mieux vaut ne rien dire que tout déclarer manquant."""
     def esc(s):
         return escape(str(s or ""))
 
-    tabs, panels = [], []
+    tabs, panels, partagees = [], [], {}
     for i, run in enumerate(runs):
         label = run.data.get("name") or f"Saison {run.number}"
         episodes = run.episodes
@@ -259,9 +272,16 @@ def build_recap_html(series_name, show, runs, tmdb_id, stills, size):
                     f"data-s='{run.number}'>{esc(label)}{compteur}</button>")
         cards = []
         for ep in episodes:
-            key = embed.image_key(ep.get("still_path"), size)
+            path, repli = episode_image(ep, run, show)
+            key = embed.image_key(path, size)
             uri = stills.get(key) if key else None
-            img = embed.tag(key, uri) if uri else "<div class='noimg'></div>"
+            if not uri:
+                img = "<div class='noimg'></div>"
+            elif repli:
+                partagees[key] = uri
+                img = embed.shared_slot(key, "fb")
+            else:
+                img = embed.tag(key, uri)
 
             absent = marque and ep.get("episode_number") not in run.owned
             manque = "<span class='miss'>manquant</span>" if absent else ""
@@ -296,6 +316,11 @@ def build_recap_html(series_name, show, runs, tmdb_id, stills, size):
         ".ep{display:flex;gap:16px;padding:14px 0;border-bottom:1px solid #21232b}"
         ".ep img,.ep .noimg{width:160px;height:90px;object-fit:cover;border-radius:8px;"
         "background:#21232b;flex:none}"
+        # Emplacement de repli : une affiche est en portrait, donc contenue plutôt que rognée en bandeau. 'background-color' et non le raccourci 'background', qui effacerait l'image posée par la règle de chaque affiche.
+        ".ep .fb{width:160px;height:90px;border-radius:8px;flex:none;"
+        "background-color:#21232b;background-size:contain;background-position:center;"
+        "background-repeat:no-repeat}"
+        + "".join(embed.shared_rule(cle, uri) for cle, uri in partagees.items()) +
         ".ep.absent{opacity:.42}"
         ".miss{margin-left:8px;padding:1px 7px;border-radius:999px;font-size:11px;"
         "text-transform:uppercase;letter-spacing:.04em;background:#3a2a2e;color:#ff9aa6;"
@@ -343,7 +368,7 @@ def generate_sidecars(root_dir, series_name, show, processed, args, tmdb):
 
     if args.recap:
         out = Path(root_dir) / "recap.html"
-        needed = collect_stills(processed, args.still_size)
+        needed = collect_stills(processed, show, args.still_size)
         # En simulation on ne télécharge rien : la page est rendue sans vignette.
         stills = (embed.fetch(needed, embed.read_embedded(out), args.still_size, tmdb, label="vignette") if apply else {})
         html = build_recap_html(series_name, show, processed, args.tmdb_id, stills, args.still_size)

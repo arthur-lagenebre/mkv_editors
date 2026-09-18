@@ -19,6 +19,9 @@ KEY_RE = re.compile(r"^[\w./-]+$")
 # Retrouve les images déjà encodées dans une fiche précédente. 'data-still' est l'ancien nom de l'attribut : les fiches déjà générées restent lisibles.
 EMBEDDED_RE = re.compile(r"<img data-(?:img|still)='([^']+)' src='(data:[^']+)'")
 
+# Même chose pour une image PARTAGEE, portée par une règle CSS (voir shared_rule).
+SHARED_RE = re.compile(r"\[data-img='([^']+)'\]\{background-image:url\('(data:[^']+)'\)\}")
+
 
 def image_key(image_path, size):
     """Clé de cache d'une image TMDB, ou None si le chemin est inattendu."""
@@ -34,13 +37,26 @@ def read_embedded(page_path):
         html = Path(page_path).read_text(encoding="utf-8")
     except OSError:
         return {}
-    return dict(EMBEDDED_RE.findall(html))
+    return dict(EMBEDDED_RE.findall(html) + SHARED_RE.findall(html))
 
 
 def tag(key, uri, **attrs):
     """Balise <img> encodée, écrite dans la forme que read_embedded sait relire."""
     extra = "".join(f" {nom}='{valeur}'" for nom, valeur in attrs.items())
     return f"<img data-img='{key}' src='{uri}' alt=''{extra} decoding='async' loading='lazy'>"
+
+
+def shared_rule(key, uri):
+    """Règle CSS qui porte une image partagée par plusieurs emplacements.
+
+    Une affiche qui remplace les vignettes manquantes d'une saison revient sur chaque épisode : recopiée dans autant de balises <img>, elle pèserait sa taille par épisode. Ecrite une fois ici, les emplacements n'en portent que la clé.
+    """
+    return f"[data-img='{key}']{{background-image:url('{uri}')}}"
+
+
+def shared_slot(key, css_class):
+    """Emplacement affichant l'image de `shared_rule`, sans la recopier."""
+    return f"<div class='{css_class}' data-img='{key}'></div>"
 
 
 def fetch(needed, cached, size, tmdb, label="image"):

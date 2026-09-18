@@ -327,6 +327,46 @@ class TestRecap(unittest.TestCase):
         self.assertIn("<div class='noimg'></div>", html)
 
 
+class TestRepliDeVignette(unittest.TestCase):
+    """Un épisode sans vignette TMDB reprend l'affiche de sa saison, sinon celle de la série."""
+    SANS_VIGNETTE = [{"episode_number": 1, "name": "Un"}, {"episode_number": 2, "name": "Deux"}]
+
+    def saison(self, **extra):
+        return dict({"season_number": 1, "episodes": self.SANS_VIGNETTE}, **extra)
+
+    def test_l_affiche_de_saison_prime(self):
+        run = series.SeasonRun(Path("."), 1, self.saison(poster_path="/s.jpg"), {1, 2})
+        chemin, repli = series.episode_image(self.SANS_VIGNETTE[0], run, {"poster_path": "/serie.jpg"})
+        self.assertEqual((chemin, repli), ("/s.jpg", True))
+
+    def test_repli_sur_l_affiche_de_serie(self):
+        run = series.SeasonRun(Path("."), 1, self.saison(), {1, 2})
+        chemin, repli = series.episode_image(self.SANS_VIGNETTE[0], run, {"poster_path": "/serie.jpg"})
+        self.assertEqual((chemin, repli), ("/serie.jpg", True))
+
+    def test_la_vignette_propre_n_est_jamais_remplacee(self):
+        run = series.SeasonRun(Path("."), 1, self.saison(poster_path="/s.jpg"), {1})
+        ep = {"episode_number": 1, "still_path": "/a.jpg"}
+        self.assertEqual(series.episode_image(ep, run, {"poster_path": "/serie.jpg"}), ("/a.jpg", False))
+
+    def test_l_affiche_de_repli_est_a_telecharger(self):
+        run = series.SeasonRun(Path("."), 1, self.saison(poster_path="/s.jpg"), {1, 2})
+        self.assertEqual(series.collect_stills([run], {}, "w300"), {"w300/s.jpg": "/s.jpg"})
+
+    def test_affiche_ecrite_une_seule_fois_pour_toute_la_saison(self):
+        # Recopiée dans chaque <img>, elle pèserait sa taille par épisode.
+        run = series.SeasonRun(Path("."), 1, self.saison(poster_path="/s.jpg"), {1, 2})
+        html = series.build_recap_html("S", {}, [run], "1", {"w300/s.jpg": "data:image/jpeg;base64,SSS"}, "w300")
+        self.assertEqual(html.count("data:image/jpeg;base64,SSS"), 1)
+        self.assertEqual(html.count("<div class='fb' data-img='w300/s.jpg'></div>"), 2)
+        self.assertNotIn("<div class='noimg'></div>", html)
+
+    def test_sans_aucune_affiche_l_emplacement_reste_vide(self):
+        run = series.SeasonRun(Path("."), 1, self.saison(), {1, 2})
+        html = series.build_recap_html("S", {}, [run], "1", {}, "w300")
+        self.assertEqual(html.count("<div class='noimg'></div>"), 2)
+
+
 class FauxTmdb:
     """Renvoie des sagas préparées, et compte les appels."""
 
